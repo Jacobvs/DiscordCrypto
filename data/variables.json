@@ -1,0 +1,16 @@
+{
+  "390628544369393664":
+  {
+    "maintenance_mode": false,
+    "captcha_status": true,
+    "min_account_age_seconds": -1,
+    "roles": {
+      "verified_role": 47307170949968692,
+      "temporary_role": 0
+    },
+    "channels": {
+      "log_channel": 0,
+      "captcha_channel": 0
+    }
+  }
+}
