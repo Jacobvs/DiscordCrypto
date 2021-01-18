@@ -8,12 +8,13 @@ import shutil
 import string
 from random import random
 
-import Augmentor as Augmentor
+import Augmentor
 import discord
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from discord.ext import commands
-from cogs.logging import sendLog
+
+from cogs.logging import send_log
 
 
 class Events(commands.Cog):
@@ -30,7 +31,7 @@ class Events(commands.Cog):
         captcha_channel: discord.TextChannel = self.client.variables[member.guild.id]['captcha_channel']
         min_account_age_seconds = self.client.variables[member.guild.id]['min_account_age_seconds']
 
-        memberTime = f"{member.joined_at.year}-{member.joined_at.month}-{member.joined_at.day} {member.joined_at.hour}:{member.joined_at.minute}:{member.joined_at.second}"
+        member_time = f"{member.joined_at.year}-{member.joined_at.month}-{member.joined_at.day} {member.joined_at.hour}:{member.joined_at.minute}:{member.joined_at.second}"
 
         # Check the user account creation date (1 day by default)
         if min_account_age_seconds != -1:
@@ -55,26 +56,25 @@ class Events(commands.Cog):
                 log_embed.set_footer(text=f"Joined at: {member.joined_at}")
                 log_embed.timestamp = datetime.datetime.utcnow()
 
-                await sendLog(self.client, member.guild, log_channel, embed=embed, event="onJoin Account Age", action="Member Kicked")
+                await send_log(self.client, member.guild, log_channel, embed=embed, event="onJoin Account Age", action="Member Kicked")
 
                 await member.send(embed=embed)
                 await member.kick(reason=f"Account under minimum creation date! ({seconds_old}s < {min_account_age_seconds}s minimum)")  # Kick the user
-
 
         if self.client.variables[member.guild.id]['captcha_status']:
             # Give temporary role
             await member.add_roles(self.client.variables[member.guild.id]['temporary_role'])
 
-            file, text, folderPath = await self.client.loop.run_in_executor(functools.partial(create_captcha, member))
-            
+            file, text, folder_path = await self.client.loop.run_in_executor(functools.partial(create_captcha, member))
+
             captcha_msg = await captcha_channel.send(
                 f"{member.mention} - Please solve the captcha below to gain access to the server! (6 uppercase letters).",
                 file=file)
             # Remove captcha folder
             try:
-                shutil.rmtree(folderPath)
+                shutil.rmtree(folder_path)
             except Exception as error:
-                await sendLog(self.client, member.guild, log_channel, embed=self.client.warning_embed, event=f"Delete captcha file failed {error}")
+                await send_log(self.client, member.guild, log_channel, embed=self.client.warning_embed, event=f"Delete captcha file failed {error}")
 
             # Check if it is the right user
             def check(message):
@@ -95,14 +95,14 @@ class Events(commands.Cog):
                         veri_role = self.client.variables[member.guild.id]['verified_role']
                         if veri_role:
                             await member.add_roles(veri_role)
-                    except Exception as error:
-                        await sendLog(self.client, member.guild, log_channel, self.client.error_embed, event=f"Failed to give member {member.mention} the verified role!")
+                    except Exception as _:
+                        await send_log(self.client, member.guild, log_channel, self.client.error_embed, event=f"Failed to give member {member.mention} the verified role!")
                     try:
                         temp_role = self.client.variables[member.guild.id]['temporary_role']
                         if temp_role:
                             await member.remove_roles(temp_role)
-                    except Exception as error:
-                        await sendLog(self.client, member.guild, log_channel, self.client.error_embed, event=f"Failed to remove the temporary role from member: {member.mention}")
+                    except Exception as _:
+                        await send_log(self.client, member.guild, log_channel, self.client.error_embed, event=f"Failed to remove the temporary role from member: {member.mention}")
 
                     await asyncio.sleep(3)
 
@@ -110,13 +110,13 @@ class Events(commands.Cog):
                         await captcha_msg.delete()
                         await msg.delete()
                     except discord.Forbidden or discord.HTTPException:
-                        await sendLog(self.client, member.guild, log_channel, self.client.error_embed, event="Failed to delete captcha msg/ user captcha solution msg!")
+                        await send_log(self.client, member.guild, log_channel, self.client.error_embed, event="Failed to delete captcha msg/ user captcha solution msg!")
 
                     # Logs
                     embed = discord.Embed(title=f"**{member} passed the captcha.**", description=f"**__User informations :__**\n\n**Name :** {member}\n**Id :** {member.id}",
                                           color=discord.Color.green())
-                    embed.set_footer(text=f"at {memberTime}")
-                    await sendLog(self.client, member.guild, log_channel, embed=embed, event="Successful Captcha", action=f"Verified Role Given to {member.mention}")
+                    embed.set_footer(text=f"at {member_time}")
+                    await send_log(self.client, member.guild, log_channel, embed=embed, event="Successful Captcha", action=f"Verified Role Given to {member.mention}")
 
                 else:
                     link = await captcha_channel.create_invite(reason='Failed captcha')  # Create an invite
@@ -139,13 +139,13 @@ class Events(commands.Cog):
                         await captcha_msg.delete()
                         await msg.delete()
                     except discord.Forbidden or discord.HTTPException:
-                        await sendLog(self.client, member.guild, log_channel, self.client.error_embed, event="Failed to delete captcha msg/ user captcha solution msg!")
+                        await send_log(self.client, member.guild, log_channel, self.client.error_embed, event="Failed to delete captcha msg/ user captcha solution msg!")
 
                     # Logs
                     embed = discord.Embed(title=f"**{member} failed the captcha!**", description=f"**__User information :__**\n\n**Name :** {member}\n**Id :** {member.id}",
                                           color=discord.Color.red())
-                    embed.set_footer(text=f"at {memberTime}")
-                    await sendLog(self.client, member.guild, log_channel, embed=embed, event="Failed Captcha", action=f"{member.mention} kicked from server")
+                    embed.set_footer(text=f"at {member_time}")
+                    await send_log(self.client, member.guild, log_channel, embed=embed, event="Failed Captcha", action=f"{member.mention} kicked from server")
 
             except asyncio.TimeoutError:
                 link = await captcha_channel.create_invite()  # Create an invite
@@ -170,14 +170,14 @@ class Events(commands.Cog):
                 try:
                     await captcha_msg.delete()
                 except discord.Forbidden or discord.HTTPException:
-                    await sendLog(self.client, member.guild, log_channel, self.client.error_embed, event="Failed to delete captcha msg!")
+                    await send_log(self.client, member.guild, log_channel, self.client.error_embed, event="Failed to delete captcha msg!")
 
                 # Logs
                 embed = discord.Embed(title=f"**{member} timed out while answering captcha!**", description=f"**__User information :__**\n\n**Name :** {member}\n**Id :**"
                                                                                                             f" {member.id}",
                                       color=discord.Color.red())
-                embed.set_footer(text=f"at {memberTime}")
-                await sendLog(self.client, member.guild, log_channel, embed=embed, event="Captcha Timeout", action=f"{member.mention} kicked from server")
+                embed.set_footer(text=f"at {member_time}")
+                await send_log(self.client, member.guild, log_channel, embed=embed, event="Captcha Timeout", action=f"{member.mention} kicked from server")
 
 
 def setup(client):
@@ -258,7 +258,6 @@ def create_captcha(member):
     buf = io.BytesIO()
     image.save(buf, format='PNG')
     buf.seek(0)
-
 
     # Send captcha
     return discord.File(buf, filename="Captcha.png"), text, folderPath

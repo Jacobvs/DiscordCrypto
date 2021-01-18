@@ -3,7 +3,7 @@ import json
 import discord
 
 
-async def sendLog(client, guild, channel, embed, event: str = None, action="Not Specified"):
+async def send_log(client, guild, channel, embed, event: str = None, action="Not Specified"):
     """Placeholder logging"""
 
     if not channel:

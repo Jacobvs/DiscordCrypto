@@ -4,9 +4,9 @@ import logging
 import urllib3
 import os
 
+from datetime import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
-
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
@@ -18,6 +18,8 @@ urllib3.disable_warnings()
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
 
+
+# noinspection PyUnusedLocal
 def get_prefix(client, message):
     """Returns the prefix for the specified server"""
     if message.guild is None:
@@ -27,6 +29,7 @@ def get_prefix(client, message):
         prefixes = json.load(f)
 
     return prefixes[str(message.guild.id)]
+
 
 intents = discord.Intents.default()
 intents.members = True
@@ -43,6 +46,7 @@ with open('data/variables.json', 'r') as file:
 for filename in os.listdir('./cogs/'):
     if filename.endswith('.py'):
         bot.load_extension(f'cogs.{filename[:-3]}')
+
 
 @bot.event
 async def on_ready():
@@ -63,7 +67,7 @@ async def on_ready():
         except ValueError:
             continue
 
-        vars = {}
+        variables = {}
         for record in data[g]:
             if record == 'roles':
                 for obj in data[g][record]:
@@ -71,22 +75,23 @@ async def on_ready():
                         _role = guild.get_role(int(data[g][record][obj]))
                     except ValueError:
                         _role = None
-                    vars[obj] = _role
+                    variables[obj] = _role
             elif record == 'channels':
                 for obj in data[g][record]:
                     try:
                         _channel = guild.get_channel(int(data[g][record][obj]))
                     except ValueError:
                         _channel = None
-                    vars[obj] = _channel
+                    variables[obj] = _channel
             else:
-                vars[record] = data[g][record]
+                variables[record] = data[g][record]
 
-        bot.variables[int(g)] = vars
+        bot.variables[int(g)] = variables
 
     bot.warning_embed = discord.Embed(title="⚠️ Warning!", color=discord.Color.orange())
     bot.error_embed = discord.Embed(title="❌ ERROR!", color=discord.Color.red())
 
+    bot.start_time = datetime.datetime.now()
 
     # Set Presence to reflect bot status
     if bot.maintenance_mode:
@@ -95,6 +100,7 @@ async def on_ready():
         await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"!help"))
 
     print(f'{bot.user.name} is now online!')
+
 
 @bot.command(usage="load <cog>")
 @commands.is_owner()
@@ -121,6 +127,7 @@ async def reload(ctx, extension):
     extension = extension.lower()
     bot.reload_extension(f'cogs.{extension}')
     await ctx.send('{} has been reloaded.'.format(extension.capitalize()))
+
 
 @bot.command(usage="maintenance")
 @commands.is_owner()
