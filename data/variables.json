@@ -1,16 +1,30 @@
 {
-  "390628544369393664":
-  {
-    "maintenance_mode": false,
-    "captcha_status": true,
-    "min_account_age_seconds": -1,
-    "roles": {
-      "verified_role": 47307170949968692,
-      "temporary_role": 0
+    "390628544369393664": {
+        "maintenance_mode": false,
+        "captcha_status": true,
+        "min_account_age_seconds": -1,
+        "roles": {
+            "verified_role": 473071709499686924,
+            "temporary_role": 679606142678073355,
+            "min_staff_role": 390644277560082435
+        },
+        "channels": {
+            "log_channel": 804136296024375387,
+            "captcha_channel": 483475440686858250
+        }
     },
-    "channels": {
-      "log_channel": 0,
-      "captcha_channel": 0
+    "801856472816418846": {
+        "maintenance_mode": false,
+        "captcha_status": true,
+        "min_account_age_seconds": -1,
+        "roles": {
+            "verified_role": 801856683235082240,
+            "temporary_role": 801856658204000276,
+            "min_staff_role": 801856831466242138
+        },
+        "channels": {
+            "log_channel": 801858500447305748,
+            "captcha_channel": 801858544915447818
+        }
     }
-  }
 }

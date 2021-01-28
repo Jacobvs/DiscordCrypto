@@ -4,7 +4,7 @@ import logging
 import urllib3
 import os
 
-from datetime import datetime
+import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -56,6 +56,22 @@ async def on_ready():
     bot.variables = {}
 
     # Cache variables in memory & convert ID's to objects
+    build_guild_db()
+
+    bot.warning_embed = discord.Embed(title="⚠️ Warning!", color=discord.Color.orange())
+    bot.error_embed = discord.Embed(title="❌ ERROR!", color=discord.Color.red())
+
+    bot.start_time = datetime.datetime.now()
+
+    # Set Presence to reflect bot status
+    if bot.maintenance_mode:
+        await bot.change_presence(status=discord.Status.idle, activity=discord.Game("IN MAINTENANCE MODE!"))
+    else:
+        await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"!help"))
+
+    print(f'{bot.user.name} is now online!')
+
+def build_guild_db():
     with open("data/variables.json", "r") as f:
         data = json.load(f)
 
@@ -87,19 +103,6 @@ async def on_ready():
                 variables[record] = data[g][record]
 
         bot.variables[int(g)] = variables
-
-    bot.warning_embed = discord.Embed(title="⚠️ Warning!", color=discord.Color.orange())
-    bot.error_embed = discord.Embed(title="❌ ERROR!", color=discord.Color.red())
-
-    bot.start_time = datetime.datetime.now()
-
-    # Set Presence to reflect bot status
-    if bot.maintenance_mode:
-        await bot.change_presence(status=discord.Status.idle, activity=discord.Game("IN MAINTENANCE MODE!"))
-    else:
-        await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"!help"))
-
-    print(f'{bot.user.name} is now online!')
 
 
 @bot.command(usage="load <cog>")
@@ -164,3 +167,8 @@ async def maintenance_mode(ctx):
         await ctx.send(embed=embed)
         return False
     return True
+
+
+print("Attempting to connect to Discord")
+bot.run(token)
+

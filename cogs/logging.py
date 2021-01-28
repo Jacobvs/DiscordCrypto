@@ -1,6 +1,17 @@
 import json
 
 import discord
+from discord.ext import commands
+
+
+class Logging(commands.Cog):
+
+    def __init__(self, client):
+        self.client = client
+
+
+def setup(client):
+    client.add_cog(Logging(client))
 
 
 async def send_log(client, guild, channel, embed, event: str = None, action="Not Specified"):

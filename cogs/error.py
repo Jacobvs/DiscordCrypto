@@ -79,8 +79,6 @@ class ErrorHandler(commands.Cog):
         if isinstance(error, commands.CommandError):
             return await ctx.send(f"Unhandled error while executing command `{ctx.command.name}`: {str(error)}")
 
-        if ctx.author.id in self.client.raid_db[ctx.guild.id]['leaders']:
-            self.client.raid_db[ctx.guild.id]['leaders'].remove(ctx.author.id)
         await ctx.send("An unexpected error occurred while running that command. Please report this by sending a DM to Darkmatter#7321.")
         logging.error("Ignoring exception in command {}:".format(ctx.command))
         logging.error("\n" + "".join(traceback.format_exception(type(error), error, error.__traceback__)))

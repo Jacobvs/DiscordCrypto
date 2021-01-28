@@ -2,11 +2,10 @@ import asyncio
 import datetime
 import functools
 import io
-import json
 import os
 import shutil
 import string
-from random import random
+import random
 
 import Augmentor
 import discord
@@ -21,6 +20,36 @@ class Events(commands.Cog):
 
     def __init__(self, client):
         self.client = client
+
+    @commands.command(usage="testcaptcha", description="Generate a Test Captcha")
+    @commands.is_owner()
+    async def testcaptcha(self, ctx):
+        file, text, folder_path = await self.client.loop.run_in_executor(None, functools.partial(create_captcha, ctx.author))
+
+        captcha_msg = await ctx.send(
+            f"{ctx.author.mention} - Please solve the captcha below to gain access to the server! (6 uppercase letters).",
+            file=file)
+        # Remove captcha folder
+        try:
+            shutil.rmtree(folder_path)
+        except Exception as error:
+            pass
+
+        # Check if it is the right user
+        def check(message):
+            if message.author == ctx.author and message.content != "":
+                return message.content
+
+        msg = await self.client.wait_for('message', timeout=120.0, check=check)
+        # Check the captcha
+        password = text.split(" ")
+        password = "".join(password)
+        if msg.content.upper() == password:
+            await ctx.send("Correct Solution!")
+        else:
+            await ctx.send(f"Incorrect Solution! Answer: {password}")
+
+
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
@@ -65,7 +94,7 @@ class Events(commands.Cog):
             # Give temporary role
             await member.add_roles(self.client.variables[member.guild.id]['temporary_role'])
 
-            file, text, folder_path = await self.client.loop.run_in_executor(functools.partial(create_captcha, member))
+            file, text, folder_path = await self.client.loop.run_in_executor(None, functools.partial(create_captcha, member))
 
             captcha_msg = await captcha_channel.send(
                 f"{member.mention} - Please solve the captcha below to gain access to the server! (6 uppercase letters).",
@@ -86,7 +115,7 @@ class Events(commands.Cog):
                 # Check the captcha
                 password = text.split(" ")
                 password = "".join(password)
-                if msg.content == password:
+                if msg.content.upper() == password:
 
                     embed = discord.Embed(description=f"{member.mention} passed the captcha.", color=0x2fa737)  # Green
                     await captcha_channel.send(embed=embed, delete_after=5)
@@ -224,7 +253,7 @@ def create_captcha(member):
 
     # Deform
     p = Augmentor.Pipeline(folderPath)
-    p.random_distortion(probability=1, grid_width=4, grid_height=4, magnitude=14)
+    p.random_distortion(probability=1, grid_width=4, grid_height=4, magnitude=10)
     p.process()
 
     # Search file in folder
@@ -239,13 +268,13 @@ def create_captcha(member):
     width = random.randrange(6, 8)
     co1 = random.randrange(0, 75)
     co3 = random.randrange(275, 350)
-    co2 = random.randrange(40, 65)
-    co4 = random.randrange(40, 65)
+    co2 = random.randrange(35, 50)
+    co4 = random.randrange(50, 85)
     draw = ImageDraw.Draw(image)
-    draw.line([(co1, co2), (co3, co4)], width=width, fill=(90, 90, 90))
+    draw.line([(co1, co2), (co3, co4)], width=width, fill=discord.Color.teal().to_rgb())
 
     # Add noise
-    noisePercentage = 0.25  # 25%
+    noisePercentage = 0.15  # 25%
 
     pixels = image.load()  # create the pixel map
     for i in range(image.size[0]):  # for every pixel:

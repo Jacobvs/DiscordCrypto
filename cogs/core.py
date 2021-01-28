@@ -4,17 +4,10 @@ from datetime import datetime, timedelta
 from os import listdir
 from os.path import join, isfile
 
-import aiohttp
 import discord
 import psutil
 from discord.ext import commands
 
-import checks
-import sql
-import utils
-from cogs import verification, moderation
-from cogs.verification import guild_verify_react_handler, dm_verify_react_handler, Verification, subverify_react_handler
-from sql import get_guild, get_user, add_new_guild, usr_cols, gld_cols
 from utils import EmbedPaginator
 
 
@@ -39,7 +32,7 @@ class Core(commands.Cog):
         embed.add_field(name="Connected Servers:",
                         value=f"**`{len(self.client.guilds)}`** servers with **`{mcount}`** total members.")
         embed.add_field(name="\u200b", value="\u200b")
-        lines = line_count('/home/ubuntu/DiscordCrypto/') + line_count('/home/ubuntu/DiscordCrypto/cogs')
+        lines = line_count('/home/ubuntu/DiscordCryptoBot/') + line_count('/home/ubuntu/DiscordCryptoBot/cogs')
         embed.add_field(name="Lines of Code:", value=f"**`{lines}`** lines of code.")
         embed.add_field(name="\u200b", value="\u200b")
         embed.add_field(name="Server Status:",
@@ -48,7 +41,7 @@ class Core(commands.Cog):
                                f"\nDisk: {psutil.disk_usage('/').percent}% utilization."
                                f"\nNetwork: {round(psutil.net_io_counters().bytes_recv * 0.000001)} MB in "
                                f"/ {round(psutil.net_io_counters().bytes_sent * 0.000001)} MB out.```"), inline=False)
-        embed.add_field(name="Development Progress", value="To see what I'm working on, click here:\nhttps://github.com/DiscordCrypto/projects/1", inline=False)
+        embed.add_field(name="Development Progress", value="To see what I'm working on, click here:\nhttps://github.com/Jacobvs/DiscordCrypto/projects/1", inline=False)
         if ctx.guild:
             appinfo = await self.client.application_info()
             embed.add_field(name=f"Bot author:", value=f"{appinfo.owner.mention} - DM me if something's broken or to request a feature!",
@@ -70,29 +63,6 @@ class Core(commands.Cog):
             color = role.color
         embed = discord.Embed(color=color).add_field(name=f"Members in {name}", value=f"{nmembers:,}")
         await ctx.send(embed=embed)
-
-    # Event listeners
-    @commands.Cog.listener()
-    async def on_guild_join(self, guild):
-        """Add prefix & entry in rotmg.guilds table on guild join"""
-        with open('data/prefixes.json', 'r') as file:
-            prefixes = json.load(file)
-        prefixes.update({guild.id: '!'})
-        with open('data/prefixes.json', 'w') as file:
-            json.dump(prefixes, file, indent=4)
-
-        await add_new_guild(self.client.pool, guild.id, guild.name)
-
-    @commands.Cog.listener()
-    async def on_guild_leave(self, guild):
-        """Remove guild from data"""
-        with open('data/prefixes.json', 'r') as file:
-            prefixes = json.load(file)
-        prefixes.pop(str(guild.id))
-        with open('data/prefixes.json', 'w') as file:
-            json.dump(prefixes, file, indent=4)
-
-        # TODO: Remove guilds and user-data from sql
 
     @commands.bot_has_permissions(add_reactions=True)
     @commands.command(usage="help [command/cog]",
@@ -189,9 +159,124 @@ class Core(commands.Cog):
             embed.add_field(name=cog.qualified_name + " Commands", value=cmds, inline=False)
         await ctx.send(embed=embed)
 
+    @commands.command(usage='configure', description="Configure the bot's settings for this server")
+    @commands.check_any(commands.has_permissions(administrator=True), commands.is_owner())
+    async def configure(self, ctx):
+        with open('data/variables.json') as f:
+            variables = json.load(f)
+
+        embed = discord.Embed(title="Configuration", description="Please mention or type the name of the channel in which captcha verification will occur.", color=discord.Color.teal())
+        final_embed = discord.Embed(title="Success!", description="Your configuration settings have been saved! Please review your current settings below.",
+                                    color=discord.Color.green())
+        setup_msg = await ctx.send(embed=embed)
+
+        res = await setup_converter(self.client, ctx, setup_msg)
+        if res is None:
+            return
+        variables[str(ctx.guild.id)]['channels']['captcha_channel'] = res.id
+        self.client.variables[ctx.guild.id]['captcha_channel'] = res
+        final_embed.add_field(name="Captcha Channel", value=res.mention)
+
+        embed = discord.Embed(title="Configuration", description="Please mention or type the name of the channel in which bot logs will be posted.", color=discord.Color.teal())
+        await setup_msg.edit(embed=embed)
+
+        res = await setup_converter(self.client, ctx, setup_msg)
+        if res is None:
+            return
+        variables[str(ctx.guild.id)]['channels']['log_channel'] = res.id
+        self.client.variables[ctx.guild.id]['log_channel'] = res
+        final_embed.add_field(name="Log Channel", value=res.mention)
+
+        embed = discord.Embed(title="Configuration", description="Please mention or type the name of the Role to be given to new members while waiting for captcha completion.",
+                              color=discord.Color.teal())
+        await setup_msg.edit(embed=embed)
+
+        res = await setup_converter(self.client, ctx, setup_msg, is_role=True)
+        if res is None:
+            return
+        variables[str(ctx.guild.id)]['roles']['temporary_role'] = res.id
+        self.client.variables[ctx.guild.id]['temporary_role'] = res
+        final_embed.add_field(name="Temporary Role", value=res.mention)
+
+        embed = discord.Embed(title="Configuration", description="Please mention or type the name of the Role to be given upon captcha completion.", color=discord.Color.teal())
+        await setup_msg.edit(embed=embed)
+
+        res = await setup_converter(self.client, ctx, setup_msg, is_role=True)
+        if res is None:
+            return
+        variables[str(ctx.guild.id)]['roles']['verified_role'] = res.id
+        self.client.variables[ctx.guild.id]['verified_role'] = res
+        final_embed.add_field(name="Verified Role", value=res.mention)
+
+        embed = discord.Embed(title="Configuration", description="Please mention or type the name of the minimum Role for access to staff commands.", color=discord.Color.teal())
+        await setup_msg.edit(embed=embed)
+
+        res = await setup_converter(self.client, ctx, setup_msg, is_role=True)
+        if res is None:
+            return
+        variables[str(ctx.guild.id)]['roles']['min_staff_role'] = res.id
+        self.client.variables[ctx.guild.id]['min_staff_role'] = res
+        final_embed.add_field(name="Min. Staff Role", value=res.mention)
+
+        embed = discord.Embed(title="Configuration", description="Please enter the minimum account age for new members in seconds. (-1 to disable this feature.)",
+                              color=discord.Color.teal())
+        await setup_msg.edit(embed=embed)
+
+        res = await setup_converter(self.client, ctx, setup_msg, integer=True)
+        if res is None:
+            return
+        variables[str(ctx.guild.id)]['min_account_age_seconds'] = res
+        self.client.variables[ctx.guild.id]['min_account_age_seconds'] = res
+        final_embed.add_field(name="Min Account Age", value=str(res))
+
+        with open('data/variables.json', "w") as f:
+            json.dump(variables, f, indent=4)
+
+        await setup_msg.edit(embed=final_embed)
+
+
+
+
 
 def setup(client):
     client.add_cog(Core(client))
+
+
+async def setup_converter(client, ctx, setup_msg, is_role=False, integer=False):
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel
+
+    # Wait for author to select a channel
+    while True:
+        try:
+            msg = await client.wait_for('message', timeout=60, check=check)
+        except asyncio.TimeoutError:
+            embed = discord.Embed(title="Timed out!", description=f"You didn't choose a {'role' if is_role else 'channel'} in time!", color=discord.Color.red())
+            await setup_msg.edit(embed=embed)
+            return None
+
+        if str(msg.content).lower() == 'cancel':
+            await setup_msg.edit(embed=discord.Embed(title='Canceled!', description='The setup process has been cancelled! No changes have been made.'))
+            return None
+
+        if integer:
+            try:
+                res = int(msg.content)
+            except ValueError:
+                await ctx.send(f"Please only type an integer (ex: `1`). Say `CANCEL` to cancel.", delete_after=8)
+                continue
+        else:
+            try:
+                if is_role:
+                    res = await discord.ext.commands.RoleConverter().convert(ctx, argument=str(msg.content))
+                else:
+                    res = await discord.ext.commands.TextChannelConverter().convert(ctx, argument=str(msg.content))
+            except discord.ext.commands.CommandError or discord.ext.commands.BadArgument:
+                await ctx.send(f"Channel provided: __{msg}__ was not found. Please mention the {'role' if is_role else 'channel'} again. Say `CANCEL` to cancel.", delete_after=8)
+                continue
+
+        return res
+
 
 
 def line_count(path):
