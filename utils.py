@@ -31,16 +31,7 @@ class MemberLookupConverter(discord.ext.commands.MemberConverter):
                         return result
 
                 def pred(m):
-                    if m.nick:
-                        if " | " in m.nick:
-                            names = m.nick.split(" | ")
-                            for n in names:
-                                if "".join([m.lower() for m in n if m.isalpha()]) == mem:
-                                    return True
-                        else:
-                            if "".join([m.lower() for m in m.nick if m.isalpha()]) == mem:
-                                return True
-                    return False
+                    return "".join([m.lower() for m in m.display_name if m.isalpha()]) == mem
 
                 res = discord.utils.find(pred, members)
                 if res is not None:
@@ -55,9 +46,8 @@ class MemberLookupConverter(discord.ext.commands.MemberConverter):
             nicks = []
             mems = []
             for m in ctx.guild.members:
-                if m.nick:
-                    nicks.append(m.nick.lower())
-                    mems.append(m)
+                nicks.append(m.display_name.lower())
+                mems.append(m)
 
             res = difflib.get_close_matches(mem.lower(), nicks, n=1, cutoff=0.8)
             if res:

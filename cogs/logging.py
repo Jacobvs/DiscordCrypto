@@ -31,12 +31,13 @@ async def send_log(client, guild, channel, embed, event: str = None, action="Not
         else:
             return
 
+    print(f"sending log in channel: {channel.name} id: {channel.id} for guild {guild.name}")
     # Send the message
     if embed == client.warning_embed or embed == client.error_embed:
         embed: discord.Embed = embed
         embed.description = "__EVENT:__ " + event + "\n__ACTION:__ " + action
         await channel.send(embed=embed)
     else:
-        await channel.send(f"Log for event: {event}, action taken: {action}", embed=embed)
+        await channel.send(content=f"Log for event: {event}, action taken: {action}", embed=embed)
 
     # TODO: Log to console/action file

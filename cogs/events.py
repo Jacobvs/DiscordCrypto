@@ -1,18 +1,23 @@
 import asyncio
 import datetime
+import difflib
 import functools
 import io
 import os
+import re
 import shutil
 import string
 import random
+from autocorrect import Speller
 
 import Augmentor
+import aiohttp
 import discord
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from discord.ext import commands
 
+import utils
 from cogs.logging import send_log
 
 
@@ -50,10 +55,229 @@ class Events(commands.Cog):
             await ctx.send(f"Incorrect Solution! Answer: {password}")
 
 
+    @commands.Cog.listener()
+    async def on_message(self, msg: discord.Message):
+        if msg.channel.id == 396316232124727296 or msg.channel.id == 797960110310686760 or msg.channel.id == 804133361378656287:
+            print('MESSAGE IN SUPPORT CHANNELS')
+            if msg.attachments:
+                print("MSG HAS ATTACHMENT")
+                img = msg.attachments[0]
+                if img.height:
+                    print("MSG IS IMAGE")
+                    response = await msg.channel.send("Checking Image... Please wait.")
+                    try:
+                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(200)) as cs:
+                            for i in range(3):
+                                async with cs.get(f'https://api.ocr.space/parse/imageurl?OCREngine=2&apikey={self.client.OCR_TOKEN}&url={img.url}') as r:
+                                    if r.status != 200:
+                                        await response.edit(content=f"I'm having trouble parsing this image! (Status: {r.status})... Retrying ({i}/3)")
+                                        await asyncio.sleep(60)
+                                        continue
+                                    data = await r.json()
+                                    if data['IsErroredOnProcessing'] is True:
+                                        await response.edit(content=f"I'm having trouble parsing this image!... Retrying ({i + 1}/3)")
+                                        await asyncio.sleep(60)
+                                        continue
+                                    break
+                    except (asyncio.TimeoutError, aiohttp.ClientError):
+                        try:
+                            await response.edit(content="OCR Detection failed!")
+                        except discord.Forbidden or discord.HTTPException:
+                            pass
+                        return
+
+                    parsed_text = data['ParsedResults'][0]['ParsedText'].lower()
+                    detections = ['win', 'giveaway', 'congratulations', 'prize', 'https', '.com', 'promo', 'pump', ]
+                    prefix = await self.client.get_prefix(msg)
+
+                    if any(x in parsed_text for x in detections):
+                        await response.edit(content="__**SPAM DETECTED! -- DO NOT CLICK ANY LINKS IN THE RECIEVED MESSAGE!**__\nModerators have been alerted and "
+                                                    "will review your submission soon!\nIf the user is deemed to be a scammer they will be banned! Thank you for reporting this "
+                                                    "user!")
+                        # User lookup strategy:
+                        # 1. check for 'This is the beginning of your' -> words before likely username
+                        # 2. check for 'Today at ..."
+                        # 3. check for 'h/h:mm AM/PM <u_name>' (compact mode)
+                        # 4. check for '\w \w h/h:mm'
+                        tests = []
+                        print(f"Parsed text: {parsed_text}")
+
+                        # look for line: direct message history with @ .split -> 1?
+                        for i in range(2):
+                            if 'this is the beginning of' in parsed_text:
+                                lines = parsed_text.split('this is the beginning of')[0].splitlines()
+                                tests.append(lines[0])
+                                print(f'found beginning of: {lines} === {tests}')
+                            elif 'today at' in parsed_text:
+                                lines = parsed_text.split('today at')[0].splitlines()
+                                lines = list(filter(None, lines))
+                                tests.append(lines[-1])
+                                if len(lines) > 1:
+                                    tests.append(lines[-2] + " " + lines[-1])
+                                print(f'found today at: {lines} === {tests}')
+                            elif re.search(r'\d{1,2}:\d{2}\s(?:am|pm)', parsed_text):
+                                lines = re.split(r'\d{1,2}:\d{2}\s(?:am|pm)', parsed_text)[1].splitlines()
+                                lines = list(filter(None, lines))
+                                tests.append(lines[0])
+                                if len(lines) > 1:
+                                    if ' ' in lines[0]:
+                                        words = list(filter(None, lines[0].split()))
+                                        name = ""
+                                        for w in words:
+                                            name += w
+                                            tests.append(name)
+                                            name += " "
+                                    tests.append(lines[0] + " " + lines[1])
+                                print(f'found TIME: {lines} === {tests}')
+                            elif re.search(r'(?:\S+\s\S+)\s\d{1,2}:\d{2}', parsed_text):
+                                lines = re.split(r'(?:\S+\s\S+)\s\d{1,2}:\d{2}', parsed_text)[0].splitlines()
+                                lines = list(filter(None, lines))
+                                tests.append(lines[0])
+                                if len(lines) > 1:
+                                    if ' ' in lines[0]:
+                                        words = list(filter(None, lines[0].split()))
+                                        name = ""
+                                        for w in words:
+                                            name += w
+                                            tests.append(name)
+                                            name += " "
+                                    tests.append(lines[0] + " " + lines[1])
+                                print(f'found POST TIME: {lines} === {tests}')
+                            if tests:
+                                break
+                            parsed_text = Speller(only_replacements=True).autocorrect_sentence(parsed_text)
+
+                        member = None
+
+                        if tests:
+                            tests.sort(key=len)
+                            converter = utils.MemberLookupConverter()
+                            ctx = commands.Context(bot=self.client, prefix=prefix, guild=msg.guild, message=msg)
+                            for l in tests:
+                                try:
+                                    member = await converter.convert(ctx, l)
+                                    if member:
+                                        break
+                                except discord.ext.commands.BadArgument:
+                                    pass
+
+                        spam_report_channel = self.client.variables[msg.guild.id]['spam_reports']
+
+                        detected_member_str = f"\n__User Detected:__\n{member.mention} ({member.display_name}#{member.discriminator}) - Joined (" \
+                                              f"{member.joined_at.strftime('%m/%d/%Y, %H:%M:%S %Z')})" if member else "\n\nUser not found! Please ban the appropriate user if " \
+                                                                                                                      f"possible!\n(Use: `{prefix}find " \
+                                                                                                                      f"<username>` to search for a member)"
+                        embed = discord.Embed(title="Possible Spam Report!",
+                                              description=f"Spam report detected in {msg.channel.mention} - sent by {msg.author.mention}.{detected_member_str}\n\nImage provided "
+                                                          f"below:",
+                                              color=discord.Color.teal(), url=msg.jump_url)
+                        if member:
+                            embed.set_author(name=member.display_name, icon_url=member.avatar_url)
+                        embed.set_image(url=img.url)
+                        footer = 'Click ✅ to ban user, ❌ to ignore.' if member else 'Click ❌ to remove this message.'
+                        embed.set_footer(text=footer+" | Detected")
+                        embed.timestamp = datetime.datetime.utcnow()
+
+                        id = member.id if member else "N/A"
+                        report = await spam_report_channel.send(content=f'SPAM Report for UID: {id}', embed=embed)
+                        if member:
+                            await report.add_reaction('✅')
+                        await report.add_reaction('❌')
+
+                    else:
+                        try:
+                            await response.delete()
+                        except discord.Forbidden or discord.HTTPException:
+                            pass
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        if str(payload.emoji) in ['✅', '❌']:
+            print("DETECTED CHECK/X REACTION")
+            spam_reports_channel: discord.TextChannel = self.client.variables[payload.guild_id]['spam_reports']
+            duplicate_reports_channel: discord.TextChannel = self.client.variables[payload.guild_id]['duplicate_reports']
+            if (payload.channel_id == spam_reports_channel.id or payload.channel_id == duplicate_reports_channel.id) and payload.user_id != self.client.user.id:
+                is_spam = True
+                if payload.channel_id == spam_reports_channel.id:
+                    msg: discord.Message = await spam_reports_channel.fetch_message(payload.message_id)
+                else:
+                    msg: discord.Message = await duplicate_reports_channel.fetch_message(payload.message_id)
+                    is_spam = False
+                if ('SPAM Report' in msg.content or 'DUPLICATE Report' in msg.content) and msg.author.id == self.client.user.id:
+                    print("Reaction added to report channel")
+                    embed: discord.Embed = msg.embeds[0]
+
+                    if is_spam:
+                     url = embed.image.url
+
+                    if str(payload.emoji) == '❌':
+                        embed.title = f"Resolved: Not {'Spam' if is_spam else 'Duplicate'}"
+                        embed.description = f"Click title for original message.\t\t[[Image link]({url})]\n" if is_spam else ""
+                        if not is_spam:
+                            embed.clear_fields()
+                        embed.description += f"Resolved by: {payload.member.name}#{payload.member.discriminator}"
+                        embed.color = discord.Color.red()
+                    elif str(payload.emoji) == '✅':
+                        print("Check reaction, ban member!")
+                        uid = msg.content.split('UID: ')[1]
+                        if uid.isdigit():
+                            member = spam_reports_channel.guild.get_member(int(uid))
+                            if not member:
+                                print("trying to get USER account")
+                                _user = self.client.get_user(int(uid))
+                                if _user is not None:
+                                    member = _user
+                            if member is not None:
+                                try:
+                                    print("Trying to ban member...")
+                                    await spam_reports_channel.guild.ban(user=member, reason=f'Banned for {"spamming" if is_spam else "duplicate name"} '
+                                                                                             f'by {payload.member.name}#{payload.member.discriminator}',
+                                                                         delete_message_days=7)
+                                    print(f"Successfully banned: {payload.member.name}#{payload.member.discriminator}")
+                                    # await duplicate_reports_channel.send("TESTING: MEMBER BANNED HERE!")
+                                except discord.Forbidden:
+                                    return await spam_reports_channel.send("Missing Permissions to ban member!")
+                                if is_spam:
+                                    ban_embed = discord.Embed(description=f"{member.mention} ({member.name}#{member.discriminator}) was banned for "
+                                                                          f"{'spamming' if is_spam else 'duplicate name'}.",
+                                                          color=discord.Color.gold())
+                                    ban_embed.set_author(name='Member Banned', icon_url=member.avatar_url)
+                                    ban_embed.set_footer(text=f'ID: {member.id}')
+                                    submission_channel = self.client.get_channel(int(embed.url.split('channels/')[1].split("/")[1]))
+                                    await submission_channel.send(embed=ban_embed)
+                                else:
+                                    embed.clear_fields()
+
+                                embed.title = "Resolved: Member Banned"
+                                embed.description = f"{member.mention} ({member.name}#{member.discriminator}) was banned for {'spamming' if is_spam else 'duplicate name'}.\n\n"
+                                if is_spam:
+                                    embed.description += f"Click title for original message.\t\t[[Image link]({url})]\n"
+                                embed.description += f"Resolved by: {payload.member.name}#{payload.member.discriminator}"
+                                embed.color = discord.Color.green()
+                            else:
+                                embed.title = "Resolved: Scam detected - USER account deleted!"
+                                embed.description = f"The detected user was attempted to be banned, but the associated account has since been deleted.\n" \
+                                                    f"Resolved by: {payload.member.name}#{payload.member.discriminator}" + "\n\n__User Detected:__"\
+                                                    + embed.description.split("__User Detected:__")[1]
+                                if is_spam:
+                                    embed.description += f"Click title for original message.\t\t[[Image link]({url})]\n"
+                                embed.color = discord.Color.orange()
+                        else:
+                            return
+                    embed.set_image(url=discord.Embed.Empty)
+                    embed.set_footer(text="Resolved at ")
+                    embed.timestamp = datetime.datetime.utcnow()
+                    try:
+                        await msg.edit(content="", embed=embed)
+                        await msg.clear_reactions()
+                    except discord.Forbidden or discord.HTTPException:
+                        pass
+
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        if member.bot:
+        if member.bot or self.client.variables[member.guild.id]['maintenance_mode']:
+            print('Member joined in maintenance mode!')
             return
 
         log_channel: discord.TextChannel = self.client.variables[member.guild.id]['log_channel']
@@ -97,8 +321,10 @@ class Events(commands.Cog):
             file, text, folder_path = await self.client.loop.run_in_executor(None, functools.partial(create_captcha, member))
 
             captcha_msg = await captcha_channel.send(
-                f"{member.mention} - Please solve the captcha below to gain access to the server! (6 uppercase letters).",
+                f"{member.mention} - Please solve the captcha below to gain access to the server!",
                 file=file)
+
+
             # Remove captcha folder
             try:
                 shutil.rmtree(folder_path)
@@ -110,11 +336,13 @@ class Events(commands.Cog):
                 if message.author == member and message.content != "":
                     return message.content
 
+            password = text.split(" ")
+            password = "".join(password)
+
             try:
                 msg = await self.client.wait_for('message', timeout=120.0, check=check)
                 # Check the captcha
-                password = text.split(" ")
-                password = "".join(password)
+
                 if msg.content.upper() == password:
 
                     embed = discord.Embed(description=f"{member.mention} passed the captcha.", color=0x2fa737)  # Green
@@ -148,11 +376,11 @@ class Events(commands.Cog):
                     await send_log(self.client, member.guild, log_channel, embed=embed, event="Successful Captcha", action=f"Verified Role Given to {member.mention}")
 
                 else:
-                    link = await captcha_channel.create_invite(reason='Failed captcha')  # Create an invite
+                    link = 'https://discord.gg/3BCVhhG'  # Create an invite
                     embed = discord.Embed(description=f"{member.mention} failed the captcha.", color=discord.Color.red())  # Red
                     await captcha_channel.send(embed=embed, delete_after=5)
                     embed = discord.Embed(title=f"Error! Incorrect Captcha!", description=f"You have been kicked from {member.guild.name}\nReason : You failed the "
-                                                                                          f"captcha!\nCorrect answer: __{text}__"
+                                                                                          f"captcha!\nCorrect answer: __{password}__"
                                                                                           f"\nServer link : <{link}> (Use this link to re-join the server and try again!)",
                                           color=discord.Color.red())
                     try:
@@ -177,12 +405,12 @@ class Events(commands.Cog):
                     await send_log(self.client, member.guild, log_channel, embed=embed, event="Failed Captcha", action=f"{member.mention} kicked from server")
 
             except asyncio.TimeoutError:
-                link = await captcha_channel.create_invite()  # Create an invite
+                link = 'https://discord.gg/3BCVhhG' # Create an invite
                 embed = discord.Embed(title=f"Timeout!", description=f"{member.mention} has exceeded the response time (120s)!", color=discord.Color.orange())
                 await captcha_channel.send(embed=embed, delete_after=5)
                 try:
                     embed = discord.Embed(title=f"Error! Captcha response timeout!", description=f"You have been kicked from {member.guild.name}\nReason : You took too long to "
-                                                                                                 f"answer the captcha! (120s) \n Correct answer: __{text}__\n"
+                                                                                                 f"answer the captcha! (120s) \n Correct answer: __{password}__\n"
                                                                                                  f"Server link : <{link}> (Use this link to re-join the server and try again!)",
                                           color=discord.Color.red())
                     try:
@@ -208,9 +436,44 @@ class Events(commands.Cog):
                 embed.set_footer(text=f"at {member_time}")
                 await send_log(self.client, member.guild, log_channel, embed=embed, event="Captcha Timeout", action=f"{member.mention} kicked from server")
 
+        if self.client.variables[member.guild.id]['duplicate_status']:
+            # check to see if username is the same as any staff
+            min_staff_role: discord.Role = self.client.variables[member.guild.id]['min_staff_role']
+            staff_name_list = filter(lambda mem: mem.top_role >= min_staff_role and not mem.bot, member.guild.members)
+            # print("Staff uname list:")
+            # print([m.name for m in staff_name_list])
+
+            res = difflib.get_close_matches(member.display_name, [m.name for m in staff_name_list], cutoff=0.85)
+            print("Member joined with name: " + member.display_name + " | Checking similarities:")
+            print(res)
+            if len(res) > 0:
+                print("detected similar name!")
+                embed = discord.Embed(title="Possible Impersonation Report!", description=f"User: {member.mention} - ({member.name}#{member.discriminator})\nJoined (" \
+                                              f"{member.joined_at.strftime('%m/%d/%Y, %H:%M:%S %Z')})\n\nDetected "
+                                                                                          f"similarities with staff: {res}\n", color=discord.Color.teal())
+                embed.add_field(name="Actions:", value="Click the ✅ emoji to ban this member\nClick the ❌ emoji to allow the user server access & resolve this case.")
+                embed.timestamp = datetime.datetime.utcnow()
+                embed.set_author(name=member.display_name, icon_url=member.avatar_url)
+                report = await self.client.variables[member.guild.id]['duplicate_reports'].send(content=f'DUPLICATE Report for UID: {member.id}', embed=embed)
+                if member:
+                    await report.add_reaction('✅')
+                await report.add_reaction('❌')
+
+            # check to see if member shares name with anyone in server
+
+
+        try:
+            def check(msg):
+                return msg.author == member
+
+            await captcha_channel.purge(limit=200, check=check)
+        except discord.Forbidden:
+            pass
+
 
 def setup(client):
     client.add_cog(Events(client))
+
 
 
 def secondsformatter(total_seconds):

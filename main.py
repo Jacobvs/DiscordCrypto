@@ -8,6 +8,8 @@ import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from cogs import events
+
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
@@ -17,6 +19,7 @@ urllib3.disable_warnings()
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
+ocr_token = os.getenv('OCR_TOKEN')
 
 
 # noinspection PyUnusedLocal
@@ -36,9 +39,10 @@ intents.members = True
 intents.typing = False
 intents.presences = False
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix=get_prefix, intents=intents)
 bot.remove_command('help')
 bot.owner_id = 196282885601361920
+bot.OCR_TOKEN = ocr_token
 
 with open('data/variables.json', 'r') as file:
     bot.maintenance_mode = json.load(file).get("maintenance_mode")
@@ -58,6 +62,8 @@ async def on_ready():
     # Cache variables in memory & convert ID's to objects
     build_guild_db()
 
+    await cleanup()
+
     bot.warning_embed = discord.Embed(title="⚠️ Warning!", color=discord.Color.orange())
     bot.error_embed = discord.Embed(title="❌ ERROR!", color=discord.Color.red())
 
@@ -70,6 +76,7 @@ async def on_ready():
         await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"!help"))
 
     print(f'{bot.user.name} is now online!')
+
 
 def build_guild_db():
     with open("data/variables.json", "r") as f:
@@ -105,6 +112,26 @@ def build_guild_db():
         bot.variables[int(g)] = variables
 
 
+
+async def cleanup():
+    for g in bot.guilds:
+        if g.id in bot.variables:
+            data = bot.variables[g.id]
+            # Cleanup captcha channel
+            captcha_channel = data['captcha_channel']
+            no_older_than = datetime.datetime.utcnow() - datetime.timedelta(days=14) + datetime.timedelta(seconds=1)
+            def check(msg):
+                return not msg.pinned
+
+            await captcha_channel.purge(check=check, after=no_older_than, bulk=True)
+
+            temprole = data['temporary_role']
+            for m in temprole.members:
+                if m.top_role <= temprole:
+                    bot.loop.create_task(events.Events.on_member_join(events.Events(bot), m))
+
+
+
 @bot.command(usage="load <cog>")
 @commands.is_owner()
 async def load(ctx, extension):
@@ -128,7 +155,11 @@ async def unload(ctx, extension):
 async def reload(ctx, extension):
     """Reload specified cog"""
     extension = extension.lower()
-    bot.reload_extension(f'cogs.{extension}')
+    if extension == 'guilds':
+        build_guild_db()
+        extension = 'Guild Database'
+    else:
+        bot.reload_extension(f'cogs.{extension}')
     await ctx.send('{} has been reloaded.'.format(extension.capitalize()))
 
 
