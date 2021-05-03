@@ -67,24 +67,30 @@ class MemberLookupConverter(discord.ext.commands.MemberConverter):
 
 class EmbedPaginator:
 
-    def __init__(self, client, ctx, pages):
+    def __init__(self, client, channel, author, pages):
         self.client = client
-        self.ctx = ctx
+        self.channel = channel
+        self.author = author
         self.pages = pages
 
-    async def paginate(self):
+    async def paginate(self, search=False):
         if self.pages:
             pagenum = 0
             embed: discord.Embed = self.pages[pagenum]
-            if not isinstance(embed.title, _EmptyEmbed):
-                if f" (Page {pagenum + 1}/{len(self.pages)})" not in str(embed.title):
-                    embed.title = embed.title + f" (Page {pagenum + 1}/{len(self.pages)})"
-            else:
-                embed.title = f" (Page {pagenum + 1}/{len(self.pages)})"
-            msg = await self.ctx.send(embed=self.pages[pagenum])
+            if not search:
+                if not isinstance(embed.title, _EmptyEmbed):
+                    if f" (Page {pagenum + 1}/{len(self.pages)})" not in str(embed.title):
+                        embed.title = embed.title + f" (Page {pagenum + 1}/{len(self.pages)})"
+                else:
+                    embed.title = f" (Page {pagenum + 1}/{len(self.pages)})"
+            msg = await self.channel.send(embed=self.pages[pagenum])
             await msg.add_reaction("⏮️")
             await msg.add_reaction("⬅️")
-            await msg.add_reaction("⏹️")
+            if search:
+                await msg.add_reaction("✅")
+                await msg.add_reaction("❌")
+            else:
+                await msg.add_reaction("⏹️")
             await msg.add_reaction("➡️")
             await msg.add_reaction("⏭️")
 
@@ -92,16 +98,23 @@ class EmbedPaginator:
             timeleft = 300  # 5 minute timeout
             while True:
                 def check(react, usr):
-                    return not usr.bot and react.message.id == msg.id and usr.id == self.ctx.author.id and str(react.emoji) in \
-                           ["⏮️", "⬅️", "⏹️", "➡️", "⏭️"]
+                    return not usr.bot and react.message.id == msg.id and usr.id == self.author.id and \
+                           (str(react.emoji) in ["⏮️", "⬅️", "✅", "❌", "➡️", "⏭️"] if search else
+                                str(react.emoji) in ["⏮️", "⬅️", "⏹️", "➡️", "⏭️"])
 
                 try:
                     reaction, user = await self.client.wait_for('reaction_add', timeout=timeleft, check=check)
                 except asyncio.TimeoutError:
+                    if search:
+                        try:
+                            await msg.delete()
+                        except discord.DiscordException:
+                            pass
+                        return -1
                     return await self.end_pagination(msg)
 
                 if msg.guild:
-                    await msg.remove_reaction(reaction.emoji, self.ctx.author)
+                    await msg.remove_reaction(reaction.emoji, self.author)
                 timeleft = 300 - (datetime.datetime.utcnow() - starttime).seconds
                 if str(reaction.emoji) == "⬅️":
                     if pagenum == 0:
@@ -119,15 +132,28 @@ class EmbedPaginator:
                     pagenum = len(self.pages) - 1
                 elif str(reaction.emoji) == "⏹️":
                     return await self.end_pagination(msg)
+                elif str(reaction.emoji) == '✅':
+                    try:
+                        await msg.delete()
+                    except discord.DiscordException:
+                        pass
+                    return pagenum
+                elif str(reaction.emoji) == '❌':
+                    try:
+                        await msg.delete()
+                    except discord.DiscordException:
+                        pass
+                    return -1
                 else:
                     continue
 
                 embed: discord.Embed = self.pages[pagenum]
-                if not isinstance(embed.title, _EmptyEmbed):
-                    if f" (Page {pagenum + 1}/{len(self.pages)})" not in str(embed.title):
-                        embed.title = embed.title + f" (Page {pagenum + 1}/{len(self.pages)})"
-                else:
-                    embed.title = f" (Page {pagenum + 1}/{len(self.pages)})"
+                if not search:
+                    if not isinstance(embed.title, _EmptyEmbed):
+                        if f" (Page {pagenum + 1}/{len(self.pages)})" not in str(embed.title):
+                            embed.title = embed.title + f" (Page {pagenum + 1}/{len(self.pages)})"
+                    else:
+                        embed.title = f" (Page {pagenum + 1}/{len(self.pages)})"
                 await msg.edit(embed=self.pages[pagenum])
 
 
@@ -428,6 +454,22 @@ class Duration(Converter):
         now = datetime.datetime.utcnow()
 
         return now + delta
+
+
+def duration_formatter(tsecs, ptype):
+    days, remainder = divmod(tsecs, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    seconds = round(seconds)
+    fduration = f"This {ptype} was issued for "
+    if days != 0:
+        fduration += f"{int(days)} Days, "
+    if hours != 0:
+        fduration += f"{int(hours)} Hours, "
+    if minutes != 0:
+        fduration += f"{int(minutes)} Minutes, "
+    fduration += f"{int(seconds)} Seconds."
+    return fduration
 
 
 def textProgressBar(iteration, total, prefix='```yml\nProgress:  ', percent_suffix="", suffix='\n```', decimals=1, length=100, fullisred=True, empty="<:gray:736515579103543336>"):

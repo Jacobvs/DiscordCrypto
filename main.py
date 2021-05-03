@@ -20,6 +20,7 @@ urllib3.disable_warnings()
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
 ocr_token = os.getenv('OCR_TOKEN')
+cmc_token = os.getenv('CMC_TOKEN')
 
 
 # noinspection PyUnusedLocal
@@ -43,6 +44,7 @@ bot = commands.Bot(command_prefix=get_prefix, intents=intents)
 bot.remove_command('help')
 bot.owner_id = 196282885601361920
 bot.OCR_TOKEN = ocr_token
+bot.CMC_TOKEN = cmc_token
 
 with open('data/variables.json', 'r') as file:
     bot.maintenance_mode = json.load(file).get("maintenance_mode")
@@ -68,6 +70,22 @@ async def on_ready():
     bot.error_embed = discord.Embed(title="❌ ERROR!", color=discord.Color.red())
 
     bot.start_time = datetime.datetime.now()
+
+    bot.soft_muted = set([])
+
+    with open('data/reminders.json') as f:
+        reminders = json.load(f)
+        for gid in reminders:
+            name = reminders[gid]['name']
+            photo = reminders[gid]['photo']
+            for uid in reminders[gid]:
+                if uid.isdigit():
+                    user = bot.get_user(int(uid))
+                    if user:
+                        for r in reminders[gid][uid]:
+                            from cogs import tools
+                            total_seconds = (datetime.datetime.utcfromtimestamp(int(r[0])) - datetime.datetime.utcnow()).total_seconds()
+                            bot.loop.create_task(tools.reminder(user, gid, name, photo, total_seconds, r[1], r[2], r[3], r[4]))
 
     # Set Presence to reflect bot status
     if bot.maintenance_mode:

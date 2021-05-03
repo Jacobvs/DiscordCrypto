@@ -93,7 +93,7 @@ class Moderation(commands.Cog):
         embed.add_field(name="Punishments:", value="No punishment or blacklist logs found!")
         await ctx.send(embed=embed)
 
-    @commands.command(usage='testdm <member> <msg>')
+    @commands.command(usage='testdm <member> <msg>', description='Test sending a dm to specified member')
     @commands.is_owner()
     async def testdm(self, ctx, member: discord.Member, *, message):
         try:
@@ -101,7 +101,7 @@ class Moderation(commands.Cog):
         except discord.Forbidden:
             await ctx.send("FORBIDDEN!")
 
-    @commands.command(usage='testrole <member> <msg>')
+    @commands.command(usage='testrole <member> <msg>', description='Test adding & removing roles from a member')
     @commands.is_owner()
     async def testrole(self, ctx, member: discord.Member, role: discord.Role, ntimes:int=100):
         ntimes = 100 if ntimes > 100 else 20 if ntimes < 20 else ntimes
@@ -220,6 +220,38 @@ class Moderation(commands.Cog):
         else:
             return await ctx.send('Please confirm you would like to do this by running: `!nuke "I confirm this '
                                   'action."`\n**__THIS WILL DELETE ALL MESSAGES IN THE CHANNEL!__**')
+
+    @commands.command(usage='softmute <member> <time>', description="Mark messages from a user as a spoiler for specified time", aliases=['smute'])
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def softmute(self, ctx, member: utils.MemberLookupConverter, duration: utils.Duration):
+        total_seconds = (duration - datetime.datetime.utcnow()).total_seconds()
+
+        if member.bot:
+            return await ctx.send(f'Cannot soft-mute `{member.display_name}` (is a bot).')
+        if ctx.author.id != self.client.owner_id:
+            if member.guild_permissions.manage_guild and ctx.author.id not in self.client.owner_ids:
+                return await ctx.send(f'Cannot soft-mute `{member.display_name}` due to roles.')
+        if (member.id, ctx.guild.id) in self.client.soft_muted:
+            return await ctx.send(f"{member.display_name}__ is already Soft-Muted! Use `{ctx.prefix}rsoftmute <member>` to remove their soft-mute.")
+
+        self.client.soft_muted.add((member.id, ctx.guild.id))
+        await ctx.send(f"__{member.display_name}__ was Soft-Muted! {utils.duration_formatter(total_seconds, 'Soft-Mute')}")
+
+        await asyncio.sleep(total_seconds)
+        if (member.id, ctx.guild.id) in self.client.soft_muted:
+            self.client.soft_muted.remove((member.id, ctx.guild.id))
+            await ctx.send(f"\n__{member.display_name}__ was automatically removed from their Soft-Mute.")
+
+    @commands.command(usage='rsoftmute <member>', description="Remove a member from their soft-mute", aliases=['rsmute'])
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def rsoftmute(self, ctx, member: utils.MemberLookupConverter):
+        if (member.id, ctx.guild.id) not in self.client.soft_muted:
+            return await ctx.send(f"{member.display_name}__ is not currently Soft-Muted!")
+
+        self.client.soft_muted.remove((member.id, ctx.guild.id))
+        await ctx.send(f"__{member.display_name}__ was removed from their Soft-Mute!")
 
 
     @commands.command(usage='cleancaptcha', description='Clean up captcha channel.')

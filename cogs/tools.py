@@ -6,6 +6,8 @@ import aiohttp
 import discord
 from discord.ext import commands
 
+import utils
+
 
 class Tools(commands.Cog):
 
@@ -42,18 +44,18 @@ class Tools(commands.Cog):
         data = None
 
         if currency[0] == currency[1]:
-            res = amount
-            rate = 1
+            price = amount
         else:
             try:
                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(10)) as cs:
                     for i in range(2):
-                        async with cs.get(f'https://api.exchangerate.host/convert?from={currency[0]}&to={currency[1]}&amount={amount}&source=crypto') as r:
+                        async with cs.get(f'https://pro-api.coinmarketcap.com/v1/tools/price-conversion?symbol={currency[0]}&convert={currency[1]}&amount={amount}',
+                                          headers={'X-CMC_PRO_API_KEY': self.client.CMC_TOKEN}) as r:
                             if r.status != 200:
                                 await msg.edit(f"I'm having trouble fetching current exchange rates! (Status: {r.status})... Retrying ({i}/3)")
                                 continue
                             data = await r.json()
-                            if data['success'] is not True:
+                            if data['status']['error_code'] != 0:
                                 await msg.edit(f"I'm having trouble fetching current exchange rates!... Retrying ({i+1}/3)")
                                 continue
                             break
@@ -61,14 +63,59 @@ class Tools(commands.Cog):
                 error.description = "Retrieval of exchange rates took too long! Please try running the command later."
                 return await msg.edit(content="", embed=error)
 
-            res = data['result']
-            rate = data['info']['rate']
+            price = data['data']['quote'][currency[1]]['price']
 
-        embed = discord.Embed(title=f"{res:,.2f} {currency[1]}", description=f"{amount} {currency[0]} is **__{res:,.2f}__** {currency[1]}", color=discord.Color.green())
-        embed.add_field(name="Conversion Rate", value=f"1 {currency[0]} = {rate:,.5f} {currency[1]}")
+        embed = discord.Embed(title=f"{price:,.6g} {currency[1]}", description=f"{amount} {currency[0]} is **__{price:,.8g}__** {currency[1]}", color=discord.Color.green(),
+                              url=f'https://coinmarketcap.com/converter/{currency[0]}/{currency[1]}/?amt={amount}')
+        embed.add_field(name="Conversion Rate", value=f"1 {currency[0]} = {price/amount:,.6g} {currency[1]}")
         embed.set_footer(text="Conversion Generated ")
         embed.timestamp = datetime.datetime.utcnow()
         await msg.edit(content="", embed=embed)
+
+    @commands.command(usage='remindme <time>', description="Set a reminder to be given a specified time later.")
+    async def remindme(self, ctx, duration: utils.Duration):
+        if not ctx.message.reference:
+            return await ctx.send("Please use this command by replying to the message you'd like to be reminded about!")
+
+        total_seconds = (duration - datetime.datetime.utcnow()).total_seconds()
+        resolved = ctx.message.reference.resolved
+        content = resolved.content if resolved and resolved.content else ""
+
+        with open('data/reminders.json',) as file:
+            reminders = json.load(file, )
+
+        name = reminders[str(ctx.guild.id)]['name']
+        photo = reminders[str(ctx.guild.id)]['photo']
+        data = (duration.timestamp(), ctx.message.reference.jump_url, resolved.author.name, str(resolved.author.avatar_url), content)
+
+        if str(ctx.author.id) in reminders[str(ctx.guild.id)] and reminders[str(ctx.guild.id)][str(ctx.author.id)] is not None:
+            if len(reminders[str(ctx.guild.id)][str(ctx.author.id)]) > 9:
+                return await ctx.send("You cannot have more than 10 pending reminders! Wait until one expires before creating another.")
+            reminders[str(ctx.guild.id)][str(ctx.author.id)].append(data)
+        else:
+            reminders[str(ctx.guild.id)][str(ctx.author.id)] = [data]
+
+        try:
+            embed = discord.Embed(title="Reminder Set!", url=ctx.message.reference.jump_url, description=f"I will be reminding you about the linked message in:\n"
+                                  f"__{utils.duration_formatter(total_seconds, 'reminder').split('issued for ')[1]}__",
+                                  color=discord.Color.green())
+            embed.set_footer(text="You will be reminded")
+            embed.set_thumbnail(url='https://i.imgur.com/1b2ietu.gif')
+            embed.timestamp = duration
+            if content:
+                embed.add_field(name="Message Content:", value=content)
+            await ctx.author.send(embed=embed)
+
+            with open('data/reminders.json', 'w') as file:
+                json.dump(reminders, file, indent=4)
+        except discord.Forbidden:
+            await ctx.message.add_reaction("❌")
+            return await ctx.send("Please enable DM's to use this command!")
+        except discord.DiscordException:
+            return
+
+        await ctx.message.add_reaction("✅")
+        await reminder(ctx.author, ctx.guild.id, name, photo, total_seconds, ctx.message.reference.jump_url, resolved.author.name, resolved.author.avatar_url, content)
 
     @commands.command(usage='greed', description="Retrieve the current Crypto Fear & Greed Index", aliases=['fear', 'fng'])
     @commands.cooldown(1, 5, discord.ext.commands.BucketType.member)
@@ -124,3 +171,34 @@ class Tools(commands.Cog):
 
 def setup(client):
     client.add_cog(Tools(client))
+
+
+async def reminder(user, guild_id, guild_name, guild_icon, t_seconds, jump_url, author_name, author_pfp, content):
+    await asyncio.sleep(t_seconds)
+
+    embed = discord.Embed(title="Link to Message (Click Me!)", url=jump_url, description=f"Message sent in {guild_name} by {author_name}", color=discord.Color.gold())
+    embed.set_author(name=author_name, icon_url=author_pfp)
+    embed.set_thumbnail(url=guild_icon)
+    if content:
+        embed.add_field(name="Message Content:", value=content)
+
+    try:
+        await user.send("⚠️ Reminder ⚠️", embed=embed)
+    except discord.DiscordException:
+        pass
+
+    with open('data/reminders.json') as file:
+        reminders = json.load(file)
+
+    if reminders[str(guild_id)][str(user.id)]:
+        for r in reminders[str(guild_id)][str(user.id)]:
+            if r[1] == jump_url:
+                if reminders[str(guild_id)][str(user.id)] is None or len(reminders[str(guild_id)][str(user.id)]) == 1:
+                    data = reminders[str(guild_id)].copy()
+                    del data[str(user.id)]
+                    reminders[str(guild_id)] = data
+                else:
+                    reminders[str(guild_id)][str(user.id)] = reminders[str(guild_id)][str(user.id)].remove(r)
+
+    with open('data/reminders.json', 'w') as file:
+        json.dump(reminders, file, indent=4, )

@@ -51,7 +51,7 @@ class Core(commands.Cog):
                                f"\nDisk: {psutil.disk_usage('/').percent}% utilization."
                                f"\nNetwork: {round(psutil.net_io_counters().bytes_recv * 0.000001)} MB in "
                                f"/ {round(psutil.net_io_counters().bytes_sent * 0.000001)} MB out.```"), inline=False)
-        embed.add_field(name="Development Progress", value="To see what I'm working on, click here:\nhttps://github.com/Jacobvs/DiscordCrypto/projects/1", inline=False)
+        embed.add_field(name="Development Progress", value="To see what I'm working on, click here:\nhttps://github.com/Jacobvs/DiscordCrypto/", inline=False)
         if ctx.guild:
             appinfo = await self.client.application_info()
             embed.add_field(name=f"Bot author:", value=f"{appinfo.owner.mention} - DM me if something's broken or to request a feature!",
@@ -151,7 +151,7 @@ class Core(commands.Cog):
                         name += f" | Alias – `{ctx.prefix + cmd.aliases[0]}`"
                     page.add_field(name=name, value=cmd.description, inline=False)
             all_pages.append(page)
-        paginator = EmbedPaginator(self.client, ctx, all_pages)
+        paginator = EmbedPaginator(self.client, ctx.channel, ctx.author, all_pages)
         await paginator.paginate()
 
     @commands.command(name='commands', usage="commands", description="View a full list of all available commands.",
