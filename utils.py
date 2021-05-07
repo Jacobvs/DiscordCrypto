@@ -3,6 +3,7 @@ import datetime
 import difflib
 import re
 from enum import Enum
+import random
 
 import discord
 import numpy as np
@@ -500,3 +501,39 @@ def textProgressBar(iteration, total, prefix='```yml\nProgress:  ', percent_suff
     bar = fill * filledLength + empty * (length - filledLength)
     res = f'{prefix} {bar} - {s_percent}% {percent_suffix} {suffix}' if percent_suffix != "" else f'\r{prefix}\n{bar}{suffix}'
     return res
+
+
+def get_roast():
+    roasts = [
+        "at least my mom pretends to love me",
+        "Don't play hard to get when you are hard to want",
+        "Don't you worry your pretty little head about it. The operative word being little. Not pretty.",
+        "I don't have the time, or the crayons to explain this to you.",
+        "I once smelled a dog fart that had more personality than you.",
+        "I wonder if you'd be able to speak more clearly if your parents were second cousins instead of first.",
+        "I would rather be friends with Ajit Pai than you.",
+        "I'm not mad. I'm just... disappointed.",
+        "I’m betting your keyboard is crusty from all that Cheeto-dust finger typing, you goddamn neckbeard. ",
+        "If there was a single intelligent thought in your head it would have died from loneliness.",
+        "If you were an inanimate object, you'd be a participation trophy.",
+        "If you where any stupider we'd have to water you",
+        "Next time, don't take a laxative before you type because you just took a steaming dump right on the page. "
+        "Not even your dog loves you. He's just faking it.",
+        "People don't even pity you.",
+        "The IQ test only goes down to zero, but you make a really compelling case for negative numbers",
+        "They don't make a short enough bus in the world for a person like you.",
+        "Those aren't acne scars, those are marks from the hanger.",
+        "Why don’t you crawl back to whatever micro-organism cesspool you came from, "
+        "and try not to breath any of our oxygen on the way there",
+        "You have a face made for radio",
+        "You look like your father would be disappointed in you. If he stayed.",
+        "You may think people like being around you- but remember this: there is a difference between being liked and being tolerated.",
+        "You're an example of why animals eat their young.",
+        "You're impossible to underestimate",
+        "You're kinda like Rapunzel except instead of letting down your hair you let down everyone in your life",
+        "You're like a square blade, all edge and no point.",
+        "You're not pretty enough to be this dumb",
+        "You're so dense, light bends around you.",
+        "Your birth certificate is an apology letter from the abortion clinic.",
+        "You look like the kind of person that would have bought Bitconnect."]
+    return random.choice(roasts)

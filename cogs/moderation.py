@@ -1,11 +1,15 @@
 import asyncio
 import datetime
+import difflib
 import json
 import logging as logger
+import textwrap
+from collections import Counter
 
 import aiohttp
 import discord
 from discord.ext import commands
+from unidecode import unidecode
 
 import checks
 import utils
@@ -221,6 +225,54 @@ class Moderation(commands.Cog):
             return await ctx.send('Please confirm you would like to do this by running: `!nuke "I confirm this '
                                   'action."`\n**__THIS WILL DELETE ALL MESSAGES IN THE CHANNEL!__**')
 
+    @commands.command(usage='findduplicates [num_repeats]', description="Find accounts that have duplicate names in the server over specified threshold.")
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def findduplicates(self, ctx, num: int):
+        if num < 4:
+            return await ctx.send("Please specify a number higher than 3!")
+
+        duplicates = [f"{m} –– **{v}** duplicates\n" for m, v in Counter([unidecode(m.name) for m in ctx.guild.members]).items() if v > num]
+        # for r in duplicates:
+        #     similar = difflib.get_close_matches(r, duplicates, cutoff=0.75)
+        #     if similar:
+        #         final.remove()
+
+        embed = discord.Embed(title=f"Found {len(duplicates)} duplicated names!", color=discord.Color.green())
+        desc = "".join(duplicates)
+        if desc:
+            lines = textwrap.wrap(desc, width=1024, replace_whitespace=False, break_on_hyphens=False)  # Wrap message before max len of field of 1024
+            for i, l in enumerate(lines, start=1):
+                embed.add_field(name=f"Names: ({i}/{len(l)})", value=l, inline=False)
+        else:
+            embed.description = "No Duplicated names with an occurence of >{num} were found!"
+        await ctx.send(embed=embed)
+        for r in duplicates:
+            if len(r.split(' ––')[0]) < 4:
+                await ctx.send(f"Short name: `{r.split(' ––')[0]}` | {r.split(' –– ')[1]}")
+
+    @commands.command(usage='finduzero', description='Find members with fully unicode names.')
+    @checks.is_staff_check()
+    async def finduzero(self, ctx):
+        await ctx.send("".join([m.mention for m in ctx.guild.members if len(unidecode(m.name)) == 0]))
+
+    @commands.command(usage='finduniname <name>', description="Find member searching by unicode character replacement.")
+    @checks.is_staff_check()
+    async def finduniname(self, ctx, *, name):
+        nicks = []
+        map = {}
+        for m in ctx.guild.members:
+            n = unidecode(m.name)
+            nicks.append(n)
+            map[n] = m
+        matches = difflib.get_close_matches(name, nicks, cutoff=0.15)
+        print(f"Uni Matches: {matches}")
+        if matches:
+            await ctx.send("".join([map.get(m).mention for m in matches]))
+        else:
+            await ctx.send("No matches found!")
+
+
     @commands.command(usage='softmute <member> <time>', description="Mark messages from a user as a spoiler for specified time", aliases=['smute'])
     @commands.guild_only()
     @checks.is_staff_check()
@@ -252,6 +304,14 @@ class Moderation(commands.Cog):
 
         self.client.soft_muted.remove((member.id, ctx.guild.id))
         await ctx.send(f"__{member.display_name}__ was removed from their Soft-Mute!")
+
+    @commands.command(usage='unban <ID>', description='Unban a specified user/id')
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def unban(self, ctx, user: discord.User):
+        await ctx.guild.unban(user=user, reason=f"Unban command execution by: {ctx.author.name}")
+        await ctx.send(embed=discord.Embed(title="Success!",
+                                           description=f"{user.mention} ({user.name}#{user.discriminator}) was successfully unbanned.", color=discord.Color.green()))
 
 
     @commands.command(usage='cleancaptcha', description='Clean up captcha channel.')

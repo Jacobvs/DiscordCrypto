@@ -5,11 +5,21 @@ from discord.ext import commands
 def is_staff_check():
     """Check if user is staff in the server"""
     def predicate(ctx):
-        db = ctx.bot.variables.get(ctx.guild.id)
-        role = db['min_staff_role']
-        return ctx.author.top_role >= role or ctx.author.id == 196282885601361920
+        is_staff(ctx.bot, ctx.guild, ctx.author)
     return commands.check(predicate)
 
+def is_staff(client, guild, member):
+    db = client.variables.get(guild.id)
+    role = db['min_staff_role']
+    return member.top_role >= role or member.id == 196282885601361920
+
+def is_bots_channel():
+    "Check if command is run in bots channel"
+    def predicate(ctx):
+        db = ctx.bot.variables.get(ctx.guild.id)
+        channel = db['bots_channel']
+        return ctx.channel and ctx.channel == channel
+    return commands.check(predicate)
 
 def is_role_or_higher(member, role):
     """Base check for if user has a role or higher"""

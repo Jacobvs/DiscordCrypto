@@ -18,18 +18,19 @@ async def send_log(client, guild, channel, embed, event: str = None, action="Not
     """Placeholder logging"""
 
     if not channel:
-        with open('data/variables.json') as f:
-            data = json.load(f)
 
-        log_channel = data[str(guild.id)]['channels']['log_channel']
-        if log_channel:
-            channel = client.get_channel(log_channel)
-            if not channel:
-                return
-            else:
-                client.variables[guild.id]['log_channel'] = channel
-        else:
-            return
+
+        channel = client.variables[guild.id]['log_channel'] = channel
+
+        if not channel:
+            with open('data/variables.json') as f:
+                data = json.load(f)
+
+                log_channel = data[str(guild.id)]['channels']['log_channel']
+                if log_channel:
+                    channel = client.get_channel(log_channel)
+                    if not channel:
+                        return
 
     print(f"sending log in channel: {channel.name} id: {channel.id} for guild {guild.name}")
     # Send the message

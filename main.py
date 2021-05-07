@@ -87,6 +87,9 @@ async def on_ready():
                             total_seconds = (datetime.datetime.utcfromtimestamp(int(r[0])) - datetime.datetime.utcnow()).total_seconds()
                             bot.loop.create_task(tools.reminder(user, gid, name, photo, total_seconds, r[1], r[2], r[3], r[4]))
 
+    with open('data/banned_names.json') as f:
+        bot.banned_names = json.load(f)
+
     # Set Presence to reflect bot status
     if bot.maintenance_mode:
         await bot.change_presence(status=discord.Status.idle, activity=discord.Game("IN MAINTENANCE MODE!"))
@@ -216,6 +219,21 @@ async def maintenance_mode(ctx):
         await ctx.send(embed=embed)
         return False
     return True
+
+
+@bot.check
+async def bot_channel(ctx):
+    db = ctx.bot.variables.get(ctx.guild.id)
+    print(ctx.command.name)
+    print(db['bot_channel_only'])
+    if ctx.command.name in db['bot_channel_only']:
+        channel = db['bots_channel']
+        if channel and ctx.channel != channel:
+            ctx.command.reset_cooldown(ctx)
+            await ctx.send(f"This command can only be used in {channel.mention}. Please re-run the command there.", delete_after=30)
+            return False
+    return True
+
 
 
 print("Attempting to connect to Discord")

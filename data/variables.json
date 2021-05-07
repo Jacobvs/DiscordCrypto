@@ -4,16 +4,18 @@
         "captcha_status": false,
         "duplicate_status": true,
         "min_account_age_seconds": -1,
+        "bot_channel_only": ["fear", "fng", "greed", "stats", "help"],
         "roles": {
             "verified_role": 608524630113779722,
             "temporary_role": 679606142678073355,
             "min_staff_role": 390644277560082435
         },
         "channels": {
-            "log_channel": 610050892242223145,
+            "log_channel": 838968272510648390,
             "captcha_channel": 483475440686858250,
             "spam_reports": 806958515267960924,
-            "duplicate_reports": 826282773823225916
+            "duplicate_reports": 826282773823225916,
+            "bots_channel": 780208685229801502
         }
     },
     "801856472816418846": {
@@ -21,6 +23,7 @@
         "captcha_status": true,
         "duplicate_status": true,
         "min_account_age_seconds": -1,
+        "bot_channel_only": ["fear", "fng", "greed", "stats", "help"],
         "roles": {
             "verified_role": 801856683235082240,
             "temporary_role": 801856658204000276,
@@ -30,7 +33,8 @@
             "log_channel": 801858500447305748,
             "captcha_channel": 801858544915447818,
             "spam_reports": 801858500447305748,
-            "duplicate_reports": 801858500447305748
+            "duplicate_reports": 801858500447305748,
+            "bots_channel": 801858500447305748
         }
     }
 }

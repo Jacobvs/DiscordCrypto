@@ -19,14 +19,12 @@ class ErrorHandler(commands.Cog):
 
         if isinstance(error, commands.CommandNotFound):
             await ctx.message.delete()
-            if ctx.channel.id == 738632101523619901:
-                return await ctx.send('That command does not exist. Please use `!position` to check your place in the raid queue.')
             return await ctx.send(f"That command does not exist. Please use `{ctx.prefix}commands` for "
-                                  f"a list of commands, or `{ctx.prefix}help` for more information.")
+                                  f"a list of commands, or `{ctx.prefix}help` for more information.", delete_after=15)
 
         if isinstance(error, commands.MissingPermissions):
             await ctx.message.delete()
-            return await ctx.send(f'{ctx.author.mention} Does not have the perms to use this: `{ctx.command.name}` command.')
+            # return await ctx.send(f'{ctx.author.mention} Does not have the perms to use this: `{ctx.command.name}` command.', delete_after=15)
 
         if isinstance(error, commands.MissingRole):
             await ctx.message.delete()
@@ -36,8 +34,8 @@ class ErrorHandler(commands.Cog):
             return await ctx.send("This command cannot be used in a DM.")
 
         if isinstance(error, commands.CheckFailure) or isinstance(error, commands.CheckAnyFailure):
-            if not self.client.maintenance_mode:
-                await ctx.send(f"You do not have permission to use this command (`{ctx.prefix}{ctx.command.name}`).")  # \nCheck(s) failed: {failed}")
+            # if not self.client.maintenance_mode and error:
+                # await ctx.send(f"You do not have permission to use this command (`{ctx.prefix}{ctx.command.name}`).", delete_after=15)  # \nCheck(s) failed: {failed}")
             return await ctx.message.delete()
 
         if isinstance(error, commands.CommandOnCooldown):
@@ -58,7 +56,7 @@ class ErrorHandler(commands.Cog):
             if ctx.command.aliases:
                 aliases = "`" + "".join("!" + c + ", " for c in ctx.command.aliases) + "`"
                 embed.add_field(name="Command Aliases", value=f"{aliases}", inline=False)
-            return await ctx.send(embed=embed)
+            return await ctx.send(embed=embed, delete_after=20)
 
         if isinstance(error, commands.BadArgument):
             embed = discord.Embed(title="Error!", description="An argument you entered is invalid!", color=discord.Color.red())
@@ -67,19 +65,19 @@ class ErrorHandler(commands.Cog):
             if ctx.command.aliases:
                 aliases = "`" + "".join("!" + c for c in ctx.command.aliases) + "`"
                 embed.add_field(name="Command Aliases", value=f"{aliases}", inline=False)
-            return await ctx.send(embed=embed)
+            return await ctx.send(embed=embed, delete_after=20)
 
         if isinstance(error, discord.ext.commands.errors.ExtensionNotLoaded):
             embed = discord.Embed(title="Error!", description="Cog not found!", color=discord.Color.red())
             embed.add_field(name="Bad Argument", value=f'`{error.args[0]}`', inline=False)
             embed.add_field(name="Command Usage", value=f'`{ctx.command.usage}`', inline=False)
             embed.add_field(name='Loaded Cogs:', value="".join("`" + c + "`\n" for c in sorted(self.client.cogs)), inline=False)
-            return await ctx.send(embed=embed)
+            return await ctx.send(embed=embed, delete_after=20)
 
         if isinstance(error, commands.CommandError):
-            return await ctx.send(f"Unhandled error while executing command `{ctx.command.name}`: {str(error)}")
+            return await ctx.send(f"Unhandled error while executing command `{ctx.command.name}`: {str(error)}", delete_after=20)
 
-        await ctx.send("An unexpected error occurred while running that command. Please report this by sending a DM to Darkmatter#7321.")
+        await ctx.send("An unexpected error occurred while running that command. Please report this by sending a DM to Darkmatter#7321.", delete_after=20)
         logging.error("Ignoring exception in command {}:".format(ctx.command))
         logging.error("\n" + "".join(traceback.format_exception(type(error), error, error.__traceback__)))
 

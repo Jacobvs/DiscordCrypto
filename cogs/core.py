@@ -1,4 +1,5 @@
 import asyncio
+import difflib
 import json
 import textwrap
 from datetime import datetime, timedelta
@@ -7,6 +8,7 @@ from os.path import join, isfile
 
 import discord
 import psutil
+import unidecode as unidecode
 from discord.ext import commands
 
 import checks
@@ -265,12 +267,20 @@ class Core(commands.Cog):
         await ctx.send(s)
 
 
-    @commands.command(usage='banname <name>', description='Ban everyone with a specified name')
+    @commands.command(usage='banname [true/false: for similar names] <name>', description='Ban everyone with a specified name')
     @checks.is_staff_check()
-    async def banname(self, ctx, *, name: str):
+    async def banname(self, ctx, similar: bool, *, name: str):
         print("attempting to ban name: " + name)
         name = str(name)
-        memberlist = list(filter(lambda m: m.name == name, ctx.guild.members))
+        if similar:
+            snames = difflib.get_close_matches(name, [unidecode.unidecode(m.name) for m in ctx.guild.members], cutoff=0.60)
+            memberlist = list(filter(lambda m: unidecode.unidecode(m.name) in snames, ctx.guild.members))
+            desc = f"Similar names also to be banned:\n{' | '.join([m.mention for m in memberlist])}"
+            lines = textwrap.wrap(desc, width=1024)
+            for l in lines:
+                await ctx.send(l)
+        else:
+            memberlist = list(filter(lambda m: m.name == name, ctx.guild.members))
         embed = discord.Embed(title="Awaiting Confirmation...", description=f"Please confirm you'd like to ban everyone with the name:\n{name}\n\n{len(memberlist)} members would "
                                                                             "be banned by this action.", color=discord.Color.gold())
         msg = await ctx.send(embed=embed)
@@ -304,16 +314,18 @@ class Core(commands.Cog):
             for m in memberlist:
                 await m.ban(reason=f'banname execution by: {ctx.author.display_name}')
             print([m.name for m in memberlist])
-            await ctx.send("BANNED Members:")
-            messages = textwrap.wrap(" ".join([m.mention for m in memberlist]), width=1024)
-            for m in messages:
-                await ctx.send(m)
-            embed.set_thumbnail(url=discord.Embed.Empty)
+            # await ctx.send("BANNED Members:")
+            # messages = textwrap.wrap(" ".join([m.mention for m in memberlist]), width=1024)
+            # for m in messages:
+            #     await ctx.send(m)
+            # embed.set_thumbnail(url=discord.Embed.Empty)
             embed.color = discord.Color.green()
             embed.title = "Success!"
             embed.description = f"{len(memberlist)} members were successfully banned!\n\nTargeted name: {name}\nRequester: {ctx.author.mention} - ({ctx.author.display_name})"
             embed.timestamp = datetime.utcnow()
-            await msg.edit(embed=embed)
+            embed.set_thumbnail(url=discord.Embed.Empty)
+            await msg.delete()
+            await ctx.send(embed=embed)
         else:
             embed.color = discord.Color.red()
             embed.title = "Cancelled!"
