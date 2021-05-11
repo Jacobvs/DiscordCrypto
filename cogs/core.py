@@ -286,13 +286,20 @@ class Core(commands.Cog):
 
 
     @commands.command(usage='banname [true/false: for similar names] <name>', description='Ban everyone with a specified name')
+    @commands.guild_only()
     @checks.is_staff_check()
     async def banname(self, ctx, similar: bool, *, name: str):
         print("attempting to ban name: " + name)
         name = str(name)
         if similar:
-            snames = difflib.get_close_matches(name, [unidecode.unidecode(m.name) for m in ctx.guild.members], cutoff=0.60)
-            memberlist = list(filter(lambda m: unidecode.unidecode(m.name) in snames, ctx.guild.members))
+            nicks = []
+            map = {}
+            for m in ctx.guild.members:
+                n = unidecode.unidecode(m.name)
+                nicks.append(n)
+                map[n] = m
+            res = difflib.get_close_matches(name, nicks, cutoff=0.15)
+            memberlist = [map.get(m) for m in res]
             desc = f"Similar names also to be banned:\n{' | '.join([m.mention for m in memberlist])}"
             lines = textwrap.wrap(desc, width=1024)
             for l in lines:

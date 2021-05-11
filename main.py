@@ -68,7 +68,7 @@ async def on_ready():
     print("Connected to discord")
     bot.start_time = datetime.datetime.now()
     bot.pool = await aiomysql.create_pool(host=os.getenv("MYSQL_HOST"), port=3306, user='jacobvs', password=os.getenv("MYSQL_PASSWORD"),
-                                          db='mysql', loop=bot.loop, connect_timeout=60, autocommit=True)
+                                          db='mysql', loop=bot.loop, connect_timeout=60)
     print("Connected to DB")
 
     # Cache variables in memory & convert ID's to objects

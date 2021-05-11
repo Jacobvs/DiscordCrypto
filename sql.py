@@ -19,15 +19,21 @@ async def set_msg_count(pool: aiomysql.Pool, client, gid, uid, msg_count=1):
                 sql = "INSERT INTO crypto.logging (gid, uid, msg_count) VALUES (%s, %s, %s)"
                 data = (gid, uid, msg_count)
                 await cursor.execute(sql, data)
+                await conn.commit()
                 client.spoken.get(gid, set()).add(uid)
                 return True
 
-async def update_photo_hash(pool: aiomysql.Pool, uid, hash):
+async def update_photo_hash(pool: aiomysql.Pool, uid, hash, gid=None, new=True):
     """Update photo hash for a user"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
-            sql = "INSERT INTO crypto.logging (uid, photo_hash) VALUES (%s, %s) ON DUPLICATE KEY UPDATE photo_hash = %s"
-            await cursor.executemany(sql, (uid, hash, hash))
+            if new:
+                sql = "INSERT INTO crypto.logging (gid, uid, photo_hash) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE photo_hash = values(photo_hash)"
+                await cursor.execute(sql, (gid, uid, hash))
+            else:
+                sql = "UPDATE crypto.logging SET photo_hash = %s WHERE uid = %s"
+                await cursor.execute(sql, (uid, hash))
+            await conn.commit()
             return True
 
 
@@ -35,9 +41,9 @@ async def batch_update_photo_hashes(pool: aiomysql.Pool, data):
     """Bulk update photo hashes"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
-            data = [(r[0], r[1], r[1]) for r in data]
-            sql = "INSERT INTO crypto.logging (uid, photo_hash) VALUES (%s, %s) ON DUPLICATE KEY UPDATE photo_hash = %s"
+            sql = "INSERT INTO crypto.logging (gid, uid, photo_hash) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE photo_hash = values(photo_hash)"
             await cursor.executemany(sql, data)
+            await conn.commit()
             return True
 
 
@@ -45,8 +51,9 @@ async def set_banned_photo(pool: aiomysql.Pool, gid, uid, banned:bool):
     """Update banned photos"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
-            sql = "INSERT INTO crypto.logging (gid, uid, banned_photo) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE banned_photo = %s"
-            await cursor.execute(sql, (gid, uid, banned, banned))
+            sql = "INSERT INTO crypto.logging (gid, uid, banned_photo) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE banned_photo = values(banned_photo)"
+            await cursor.execute(sql, (gid, uid, banned))
+            await conn.commit()
             return True
 
 

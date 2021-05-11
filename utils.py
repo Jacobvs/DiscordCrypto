@@ -473,7 +473,7 @@ def duration_formatter(tsecs, ptype):
     return fduration
 
 
-def textProgressBar(iteration, total, prefix='```yml\nProgress:  ', percent_suffix="", suffix='\n```', decimals=1, length=100, fullisred=True, empty="<:gray:736515579103543336>"):
+def textProgressBar(iteration, total, prefix='```yml\nProgress:  ', percent_suffix="", suffix='\n```', decimals=1, length=100, fullisred=True, empty="<:gray:841552689191714836>"):
     """
     Call in a loop to create progress bar
     @params:
@@ -491,15 +491,15 @@ def textProgressBar(iteration, total, prefix='```yml\nProgress:  ', percent_suff
     percent = 100 * (iteration / float(total))
     s_percent = ("{0:." + str(decimals) + "f}").format(percent)
     if fullisred:
-        fill = "<:green:736390154549329950>" if percent <= 34 else "<:yellow:736390576932651049>" if percent <= 67 else "<:orange:736390576789782620>" \
-            if percent <= .87 else "<:red:736390576978788363>"
+        fill = "<:green:841552689032331275>" if percent <= 34 else "<:yellow:841552689161830400>" if percent <= 67 else "<:orange:841552688956178453>" \
+            if percent <= .87 else "<:red:841552689309679616>"
     else:
-        fill = "<:red:736390576978788363>" if percent <= 34 else "<:orange:736390576789782620>" if percent <= 67 else "<:yellow:736390576932651049>" \
-            if percent <= .87 else "<:green:736390154549329950>"
+        fill = "<:red:841552689309679616>" if percent <= 34 else "<:orange:841552688956178453>" if percent <= 67 else "<:yellow:841552689161830400>" \
+            if percent <= .87 else "<:green:841552689032331275>"
 
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + empty * (length - filledLength)
-    res = f'{prefix} {bar} - {s_percent}% {percent_suffix} {suffix}' if percent_suffix != "" else f'\r{prefix}\n{bar}{suffix}'
+    res = f'{prefix} {bar} - {s_percent}% {percent_suffix} {suffix}' if percent_suffix != "" else f'\r{prefix}\n{bar} - {s_percent}%{suffix}'
     return res
 
 

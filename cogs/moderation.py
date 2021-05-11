@@ -399,6 +399,7 @@ class Moderation(commands.Cog):
 
         try:
             payload = await self.client.wait_for('raw_reaction_add', timeout=10800, check=check)  # Wait 1 hr max
+            await msg.clear_reactions()
         except asyncio.TimeoutError:
             embed.title = "Timed out!"
             embed.description = f"Timed out! Please run `{ctx.prefix}findwordlist` again to perform actions on these results."
@@ -432,119 +433,113 @@ class Moderation(commands.Cog):
         embed.timestamp = datetime.datetime.utcnow()
         await msg.edit(embed=embed)
 
-    # GIF = b'\x47\x49\x46\x38\x37\x61'
-    # PNG = b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'
-    # JPG = b'\xFF\xD8\xFF\xD8'
-    # JPEG = b'\xFF\xD8\xFF\xE0\x00\x10\x4A\x46\x49\x46\x00\x01'
-    # WEBP = b'\x52\x49\x46\x46'
-    # len_mapping = {'JPG': len(JPG), 'JPEG': len(JPEG), 'PNG': len(PNG), 'GIF': len(GIF), 'WEBP': len(WEBP)}
-    #
-    # def chop_header(arg: bytes):
-    #     if arg.startswith((GIF, PNG, JPG, JPEG, WEBP)):
-    #         if arg.startswith(GIF):
-    #             print("GIF")
-    #             return arg[len_mapping['GIF']:]
-    #         if arg.startswith(PNG):
-    #             print("PNG")
-    #             return arg[len_mapping['PNG']:]
-    #         if arg.startswith(JPG):
-    #             print("JPG")
-    #             return arg[len_mapping['JPG']:]
-    #         if arg.startswith(JPEG):
-    #             print("JPEG")
-    #             return arg[len_mapping['JPEG']:]
-    #         if arg.startswith(WEBP):
-    #             print("WEBP")
-    #             return arg[len_mapping['WEBP']:]
-    #     raise ValueError('Bytes didnt match expected headers')
-    #
-    #
-    # b1 = chop_header(await user1.avatar_url.read())
-    # b2 = chop_header(await user2.avatar_url.read())
-    #
-    # print(b1)
-    #
-    # print(len(b1))
-    # print(len(b2))
-    # print(b1==b2)
-
-    @commands.command(usage="photoblacklist <user>")
-    @commands.guild_only()
-    @checks.is_staff_check()
-    async def photoblacklist(self, ctx, user: discord.User):
-        photo_hash = hash(await user.avatar_url_as(format='jpg', size=64).read())
-        await sql.update_photo_hash(self.client.pool, user.id, photo_hash)
-
-        await ctx.guild.chunk()
-        msg_data = await sql.get_all_logs(self.client.pool)
-        msg_data = {r[1]: r[2] for r in msg_data if r[0] == ctx.guild.id}
-        memlist = [m for m in ctx.guild.members if msg_data.get(m.id, 0) < 10]
-
+    async def sync_photo_hashes(self, guild, channel):
         embed = discord.Embed(title="Fetching Photos From Discord...", description="Please wait while profile photos are retrieved from discord.\n", color=discord.Color.gold())
-        embed.add_field(name="Members to be Retrieved:", value=f"{len(memlist)} members in the server with msg counts <10.")
+        embed.add_field(name="Members to be Retrieved:", value=f"{len(guild.members)} members in the server.")
         embed.timestamp = datetime.datetime.utcnow()
-        msg = await ctx.send(embed=embed)
+        msg = await channel.send(embed=embed)
 
-        filtered: list[tuple[discord.Member, str]] = []
-        for m in memlist:
-            av = m.avatar_url_as(format='jpg', size=64)
-            if av != m.default_avatar_url:
-                filtered.append((m, av))
-        print(len(filtered))
-        await ctx.send(len(filtered))
+        await guild.chunk()
+        log_data = await sql.get_all_logs(self.client.pool)
+        log_uids = {r[1] for r in log_data}
+        no_hashes = {r[1] for r in log_data if r[4] is None}
 
-        embed = discord.Embed(title="Checking Image Similarities...", description="Please wait while member list is indexed for photo hashes."
-                                                                                  "This can take up to 30 minutes with >50,000 members.", color=discord.Color.orange())
+        await channel.send(f"log-data len: {len(log_data)}\nun-hashed len: {len(no_hashes)}")
+        memlist = [(m, m.avatar_url_as(format='jpg', size=64)) for m in guild.members if m.id in no_hashes or m.id not in log_uids]
+
+        desc = "Please wait while member list is indexed for photo hashes.\nThis can take over an hour for 50,000+ members.\n\n"
+        embed = discord.Embed(title="Checking Image Similarities...",
+                              description=desc + utils.textProgressBar(0, len(memlist), prefix="Progress: ", suffix="", decimals=2, length=13, fullisred=False),
+                              color=discord.Color.orange())
         embed.add_field(name="Members checked:", value=f"**0** / {len(memlist)} members checked\n__{0}__ matches found.")
         embed.set_thumbnail(url="https://i.imgur.com/nLRgnZf.gif")
         embed.set_footer(text='Elapsed: 0s | Est. Left: Calculating...')
         embed.timestamp = datetime.datetime.utcnow()
         await msg.edit(embed=embed)
 
-        matches: list[discord.Member] = []
         failed: list[discord.Member] = []
         sql_data: list = []
 
         starttime = datetime.datetime.utcnow()
         last_update = 0
 
-        for i, (m, av) in enumerate(filtered, start=1):
-            if i % 15 == 0:
-                elapsed_s = (datetime.datetime.utcnow() - starttime).total_seconds()
+        for i, (m, av) in enumerate(memlist, start=1):
+            if i % 50 == 0:
+                elapsed_s = int((datetime.datetime.utcnow() - starttime).total_seconds())
                 if elapsed_s - last_update > 30:
                     last_update = elapsed_s
                     minutes, seconds = divmod(elapsed_s, 60)
-                    l_min, l_secs = divmod(int((elapsed_s/i)*len(filtered)), 60)
+                    l_min, l_secs = divmod(int((elapsed_s / i) * len(memlist)), 60)
+                    embed.description = desc + utils.textProgressBar(i, len(memlist), prefix="Progress: ", suffix="", decimals=2, length=13, fullisred=False)
                     embed.set_footer(text=f'Elapsed: {minutes}m{seconds}s | Est. Left: {l_min}m{l_secs}s')
-                    embed.set_field_at(0, name="Members checked:", value=f"**{i}** / {len(memlist)} members checked\n__{len(matches)}__ matches found.\n{len(failed)} members "
+                    embed.set_field_at(0, name="Members checked:", value=f"**{i}** / {len(memlist)} members checked\n{len(failed)} members "
                                                                          f"failed to be retrieved.")
                     await msg.edit(embed=embed)
 
-            if i % 100 == 0:
+            if i % 500 == 0:
                 print("Updating SQL Hashes")
                 await sql.batch_update_photo_hashes(self.client.pool, sql_data)
                 print("Done updating.")
                 sql_data = []
 
-            if len(failed) > 20:
-                embed = discord.Embed(title="Error!", description="Failed to retrieve >20 members profile photos! Please try this command again later.", color=discord.Color.red())
-                return await msg.edit(embed=embed)
+            if len(failed) > 80:
+                embed = discord.Embed(title="Error!", description="Failed to retrieve >80 members profile photos! Please try this command again later.", color=discord.Color.red())
+                await msg.edit(embed=embed)
+                return False
 
             try:
-                m_hash = hash(await m.avatar_url_as(format='jpg', size=64).read())
-                if photo_hash == m_hash:
-                    matches.append(m)
-                    sql_data.append((m.id, m_hash))
+                m_hash = hash(await av.read())
+                sql_data.append((m.guild.id, m.id, m_hash))
             except discord.DiscordException:
-                print("FAILED")
-                failed.append(m)
+                try:
+                    m_hash = hash(await av.read())
+                    sql_data.append((m.guild.id, m.id, m_hash))
+                except discord.DiscordException:
+                    print("FAILED")
+                    failed.append(m)
+
+        print("DONE.. Trying failed again.")
+        actual_fails = []
+        for m in failed:
+            try:
+                m_hash = hash(await m.avatar_url_as(format='jpg', size=64).read())
+                sql_data.append((m.guild.id, m.id, m_hash))
+
+            except discord.DiscordException:
+                actual_fails.append(m)
+
+        print("Updating SQL Hashes")
+        await sql.batch_update_photo_hashes(self.client.pool, sql_data)
+        print("Done updating.")
+
+        await channel.send("Failed to get:\n" + "".join([m.mention for m in actual_fails]))
+        embed = discord.Embed(title="Success!", description=f"Added **{len(memlist)}** profile hashes to the database!", color=discord.Color.blue())
+        embed.set_footer(text="©Cryptographer")
+        embed.timestamp = datetime.datetime.utcnow()
+        await msg.edit(embed=embed)
+        return True
+
+    @commands.command(usage="photoblacklist <user>")
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def photoblacklist(self, ctx, user: discord.User):
+        photo_hash = hash(await user.avatar_url_as(format='jpg', size=64).read())
+        await sql.update_photo_hash(self.client.pool, user.id, photo_hash, ctx.guild.id)
+
+        res = await self.sync_photo_hashes(ctx.guild, ctx.channel)
+        if not res:
+            await ctx.send(f"PFP Hashing failed! Results shown may not be fully accurate! Please run `{ctx.prefix}syncphotohashes` to get accurate results.")
+
+        log_data = await sql.get_all_logs(self.client.pool)
+        log_matches = {r[1] for r in log_data if r[4] and r[4] == photo_hash}
+        matches = [m for m in ctx.guild.members if m.id in log_matches]
 
         embed = discord.Embed(title="Success!", description=f"**{len(matches)}** members with identical profile photos found!\n\nTo ban all detected members & blacklist this "
                                                             f"photo, click the ✅\nClick the ❌ to ignore this result.", color=discord.Color.green())
         embed.set_thumbnail(url=user.avatar_url)
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()
-        await msg.edit(embed=embed)
+        msg = await ctx.send(embed=embed)
         await ctx.send(f"Example Detections ({'20' if len(matches) > 20 else len(matches)}/{len(matches)}):\n{''.join([m.mention for m in matches[:20]])}")
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
@@ -592,7 +587,14 @@ class Moderation(commands.Cog):
             await msg.edit(embed=embed)
 
 
-
+    @commands.command(usage="syncphotohashes", description="Sync all photo hashes for this server.")
+    @commands.guild_only()
+    @checks.is_staff_check()
+    @commands.max_concurrency(1, per=discord.ext.commands.BucketType.guild)
+    async def syncphotohashes(self, ctx):
+        log_data = await sql.get_all_logs(self.client.pool)
+        await ctx.send(log_data[0])
+        # await self.sync_photo_hashes(ctx.guild, ctx.channel)
 
     # @commands.command(usage='pban <user> <reason>')
     # @commands.is_owner()
@@ -620,4 +622,3 @@ def setup(client):
 
 def is_not_pinned(msg):
     return False if msg.pinned else True
-

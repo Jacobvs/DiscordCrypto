@@ -498,8 +498,8 @@ class Events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        if ((not all(ord(char) < 128 for char in member.name) and unidecode(member.name) in self.client.banned_names[str(member.guild.id)][1])
-                or member.name in self.client.banned_names):
+        if ((not any(ord(char) < 128 for char in member.name) and unidecode(member.name) in self.client.banned_names[str(member.guild.id)][1])
+                or member.name in self.client.banned_names[str(member.guild.id)][0]):
 
             print(f"Member joined with banned name: {member.name}")
             try:
@@ -516,7 +516,7 @@ class Events(commands.Cog):
                 pass
 
         photo_hash = hash(await member.avatar_url_as(format='jpg', size=64).read())
-        await sql.update_photo_hash(self.client.pool, member.id, photo_hash)
+        await sql.update_photo_hash(self.client.pool, member.id, photo_hash, member.guild.id)
 
         if photo_hash in self.client.banned_photos.get(member.guild.id, set()):
             print(f"Member joined with banned photo: {member.name} (ID: {member.id})")
@@ -727,9 +727,9 @@ class Events(commands.Cog):
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
         if before.avatar != after.avatar:
-            print(f"USER UPDATED AVATAR! (ID: {after.id})")
             photo_hash = hash(await after.avatar_url_as(format='jpg', size=64).read())
-            await sql.batch_update_photo_hashes(self.client.pool, [(after.id, photo_hash)])
+            print(f"USER UPDATED AVATAR! (ID: {after.id}) | Hash: {photo_hash}")
+            await sql.update_photo_hash(self.client.pool, after.id, photo_hash, new=False)
 
 
 def setup(client):

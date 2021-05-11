@@ -211,7 +211,7 @@ async def reminder(user, guild_id, guild_name, guild_icon, t_seconds, jump_url, 
         for r in reminders[str(guild_id)][str(user.id)]:
             if r[1] == jump_url:
                 if reminders[str(guild_id)][str(user.id)] is None or len(reminders[str(guild_id)][str(user.id)]) == 1:
-                    data = reminders[str(guild_id)].copy()
+                    data = reminders.get(str(guild_id)).copy()
                     del data[str(user.id)]
                     reminders[str(guild_id)] = data
                 else:
