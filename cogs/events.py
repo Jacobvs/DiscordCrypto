@@ -19,6 +19,7 @@ from discord.ext import commands
 from unidecode import unidecode
 
 import checks
+import sql
 import utils
 from cogs.logging import send_log
 from main import get_prefix
@@ -60,7 +61,10 @@ class Events(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, msg: discord.Message):
         if msg.guild and not msg.author.bot:
-            if (msg.channel.id == 396316232124727296 or msg.channel.id == 797960110310686760 or msg.channel.id == 804133361378656287) and msg.attachments and not msg.author.bot:
+            # Add to sent message queue to be inserted later...
+            self.client.sent_messages[(msg.guild.id, msg.author.id)] = self.client.sent_messages.get((msg.guild.id, msg.author.id), 0) + 1
+
+            if msg.attachments and (msg.channel.id == 396316232124727296 or msg.channel.id == 797960110310686760 or msg.channel.id == 804133361378656287):
                 print("MSG HAS ATTACHMENT")
                 img = msg.attachments[0]
                 if img.height:
@@ -68,7 +72,6 @@ class Events(commands.Cog):
                     print("MSG IS IMAGE")
                     data, img, response = await self.check_spam_img(img, msg, True)
                     await self.send_spam_report(msg, data, img, response)
-
 
             elif any(command in msg.content.split(" ")[0] for command in ['!level', '!rank']):
                 if msg.guild.id == 390628544369393664 and msg.channel.id != 780208685229801502:
@@ -150,10 +153,10 @@ class Events(commands.Cog):
 
         if data is not None:
             parsed_text = data['ParsedResults'][0]['ParsedText'].lower()
-            detections = ['win', 'giveaway', 'congratulations', 'prize', 'https', '.com', 'promo', 'pump', ]
+            detections = ['win', 'giveaway', 'congratulations', 'prize', 'https', '.com', 'promo', 'pump', 'vote', 'advertisement', 'attn', 'selling', 'finance']
             prefix = await self.client.get_prefix(msg)
 
-            if any(x in parsed_text for x in detections):
+            if any(x in parsed_text.lower() for x in detections):
                 if response:
                     await response.edit(content="__**SPAM DETECTED! -- DO NOT CLICK ANY LINKS IN THE RECIEVED MESSAGE!**__\nModerators have been alerted and "
                                             "will review your submission soon!\nIf the user is deemed to be a scammer they will be banned! Thank you for reporting this "
@@ -359,6 +362,7 @@ class Events(commands.Cog):
                                             continue
 
                                     embeds = []
+                                    mems.reverse()
                                     for i, m in enumerate(mems, start=1):
                                         embd = discord.Embed(description=f"{m.mention} ({m.name}#{m.discriminator})\n\n"
                                                                          f"If this is the correct member, press the ✅ reaction below.\nIf not, use the arrows to browse "
@@ -492,9 +496,6 @@ class Events(commands.Cog):
                         data, img, response = await self.check_spam_img(img, msg, False)
                         await self.send_spam_report(msg, data, img, response)
 
-
-
-
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         if ((not all(ord(char) < 128 for char in member.name) and unidecode(member.name) in self.client.banned_names[str(member.guild.id)][1])
@@ -511,6 +512,24 @@ class Events(commands.Cog):
                     embed.add_field(name="Unicode Name:", value=f"`{member.name}` - decoded: `{member.name.encode('unicode-escape')}`")
                 embed.timestamp = datetime.datetime.utcnow()
                 return await self.client.variables[member.guild.id]['log_channel'].send(embed=embed)
+            except discord.DiscordException:
+                pass
+
+        photo_hash = hash(await member.avatar_url_as(format='jpg', size=64).read())
+        await sql.update_photo_hash(self.client.pool, member.id, photo_hash)
+
+        if photo_hash in self.client.banned_photos.get(member.guild.id, set()):
+            print(f"Member joined with banned photo: {member.name} (ID: {member.id})")
+            try:
+                embed = discord.Embed(description=f"{member.mention} {member.name}#{member.discriminator}", color=discord.Color.from_rgb(0, 0, 0))
+                embed.set_author(name="Banned (Blacklisted Photo)", icon_url=member.avatar_url)
+                embed.set_thumbnail(url=member.avatar_url)
+                embed.set_footer(text=f"ID: {member.id}")
+                if not all(ord(char) < 128 for char in member.name):
+                    embed.add_field(name="Unicode Name:", value=f"`{member.name}` - decoded: `{member.name.encode('unicode-escape')}`")
+                embed.timestamp = datetime.datetime.utcnow()
+                await self.client.variables[member.guild.id]['log_channel'].send(embed=embed)
+                await member.ban(reason="User joined with banned photo!")
             except discord.DiscordException:
                 pass
 
@@ -704,6 +723,13 @@ class Events(commands.Cog):
             await captcha_channel.purge(limit=200, check=check)
         except discord.Forbidden:
             pass
+
+    @commands.Cog.listener()
+    async def on_user_update(self, before: discord.User, after: discord.User):
+        if before.avatar != after.avatar:
+            print(f"USER UPDATED AVATAR! (ID: {after.id})")
+            photo_hash = hash(await after.avatar_url_as(format='jpg', size=64).read())
+            await sql.batch_update_photo_hashes(self.client.pool, [(after.id, photo_hash)])
 
 
 def setup(client):

@@ -171,8 +171,8 @@ class Fun(commands.Cog):
         embed.add_field(name='Requested by:', value=ctx.author.display_name, inline=True)
         await ctx.send(content=f'\U0000FEFF\n{final}', embed=embed)
 
-    @commands.command(usage="rps <choice>", aliases=['rockpaperscissors', 'rps'], description="Play a game of Rock Paper Scissors.")
-    async def rock_paper_scissors(self, ctx, player_choice=''):
+    @commands.command(usage="rps <choice>", aliases=['rockpaperscissors'], description="Play a game of Rock Paper Scissors.")
+    async def rps(self, ctx, player_choice=''):
         options_text = ['rock', 'paper', 'scissors']
         options_emoji = [':full_moon:', ':newspaper:', ':scissors:']
 

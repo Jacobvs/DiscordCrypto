@@ -1,13 +1,16 @@
 import json
+
+import aiomysql
 import discord
 import logging
 import urllib3
 import os
 
 import datetime
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
+import sql
 from cogs import events
 
 logger = logging.getLogger('discord')
@@ -45,6 +48,11 @@ bot.remove_command('help')
 bot.owner_id = 196282885601361920
 bot.OCR_TOKEN = ocr_token
 bot.CMC_TOKEN = cmc_token
+bot.variables = {}
+bot.spoken = {}
+bot.soft_muted = set([])
+bot.sent_messages = {}
+bot.banned_photos = {}
 
 with open('data/variables.json', 'r') as file:
     bot.maintenance_mode = json.load(file).get("maintenance_mode")
@@ -58,20 +66,42 @@ for filename in os.listdir('./cogs/'):
 async def on_ready():
     """Wait until bot has connected to discord"""
     print("Connected to discord")
-
-    bot.variables = {}
+    bot.start_time = datetime.datetime.now()
+    bot.pool = await aiomysql.create_pool(host=os.getenv("MYSQL_HOST"), port=3306, user='jacobvs', password=os.getenv("MYSQL_PASSWORD"),
+                                          db='mysql', loop=bot.loop, connect_timeout=60, autocommit=True)
+    print("Connected to DB")
 
     # Cache variables in memory & convert ID's to objects
     build_guild_db()
+
+    for g in bot.guilds:
+        bot.spoken[g.id] = set()
+        bot.banned_photos[g.id] = set()
+
+    data = await sql.get_all_logs(bot.pool)
+    for record in data:
+        if record[2] > 0:
+            bot.spoken.get(record[0], set()).add(record[1])
+
 
     await cleanup()
 
     bot.warning_embed = discord.Embed(title="⚠️ Warning!", color=discord.Color.orange())
     bot.error_embed = discord.Embed(title="❌ ERROR!", color=discord.Color.red())
 
-    bot.start_time = datetime.datetime.now()
 
-    bot.soft_muted = set([])
+    update_msg_counts.start()
+
+    bot.wordlist = set(line.strip() for line in open('data/wordlist.txt'))
+
+    with open('data/banned_names.json') as f:
+        bot.banned_names = json.load(f)
+
+    # Set Presence to reflect bot status
+    if bot.maintenance_mode:
+        await bot.change_presence(status=discord.Status.idle, activity=discord.Game("IN MAINTENANCE MODE!"))
+    else:
+        await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"!help"))
 
     with open('data/reminders.json') as f:
         reminders = json.load(f)
@@ -86,15 +116,6 @@ async def on_ready():
                             from cogs import tools
                             total_seconds = (datetime.datetime.utcfromtimestamp(int(r[0])) - datetime.datetime.utcnow()).total_seconds()
                             bot.loop.create_task(tools.reminder(user, gid, name, photo, total_seconds, r[1], r[2], r[3], r[4]))
-
-    with open('data/banned_names.json') as f:
-        bot.banned_names = json.load(f)
-
-    # Set Presence to reflect bot status
-    if bot.maintenance_mode:
-        await bot.change_presence(status=discord.Status.idle, activity=discord.Game("IN MAINTENANCE MODE!"))
-    else:
-        await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"!help"))
 
     print(f'{bot.user.name} is now online!')
 
@@ -162,6 +183,7 @@ async def load(ctx, extension):
     await ctx.send('{} has been loaded.'.format(extension.capitalize()))
 
 
+
 @bot.command(usage="unload <cog>")
 @commands.is_owner()
 async def unload(ctx, extension):
@@ -224,8 +246,6 @@ async def maintenance_mode(ctx):
 @bot.check
 async def bot_channel(ctx):
     db = ctx.bot.variables.get(ctx.guild.id)
-    print(ctx.command.name)
-    print(db['bot_channel_only'])
     if ctx.command.name in db['bot_channel_only']:
         channel = db['bots_channel']
         if channel and ctx.channel != channel:
@@ -234,7 +254,17 @@ async def bot_channel(ctx):
             return False
     return True
 
-
+@tasks.loop(minutes=5)
+async def update_msg_counts():
+    print(f"Updating message counts! {len(bot.sent_messages)} new changes!")
+    data = [(v, k[0], k[1]) for k, v in bot.sent_messages.items()]
+    if len(data) > 200:
+        bot.sent_messages = {}
+        async with bot.pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                sql = "UPDATE crypto.logging SET msg_count = msg_count + %s WHERE gid = %s AND uid = %s"
+                await cursor.executemany(sql, data)
+                await conn.commit()
 
 print("Attempting to connect to Discord")
 bot.run(token)

@@ -172,9 +172,10 @@ class Tools(commands.Cog):
     @commands.command(usage='stats', description='Show my member stats!')
     async def stats(self, ctx):
         embed = discord.Embed(title=f"Stats for {ctx.guild.name}", color=discord.Color.dark_gold())
-        entries = await ctx.guild.audit_logs(limit=None, user=ctx.guild.me, action=discord.AuditLogAction.ban).flatten()
-        # kicked = len(list(filter(lambda entry: entry.action == discord.AuditLogAction.kick, entries)))
-        embed.description = f"__Moderation Action Stats:__\n**{len(entries)}** members banned for scamming!"
+        entries: list[discord.AuditLogEntry] = await ctx.guild.audit_logs(limit=None, user=ctx.guild.me).flatten()
+        kicked = len([e for e in entries if e.action == discord.AuditLogAction.kick])
+        banned = len([e for e in entries if e.action == discord.AuditLogAction.ban])
+        embed.description = f"__Moderation Action Stats:__\n**{banned}** members banned for scamming!\n**{kicked}** detected bot accounts kicked from the server!"
         embed.set_thumbnail(url=ctx.guild.icon_url)
         embed.add_field(name="Bot latency:", value=f"**`{round(self.client.latency * 1000, 2)}`** Milliseconds.")
         mcount = 0

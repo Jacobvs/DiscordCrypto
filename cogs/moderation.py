@@ -1,8 +1,13 @@
 import asyncio
 import datetime
 import difflib
+import functools
+import hashlib
+import io
 import json
 import logging as logger
+import os
+from PIL import ImageChops, Image
 import textwrap
 from collections import Counter
 
@@ -12,6 +17,7 @@ from discord.ext import commands
 from unidecode import unidecode
 
 import checks
+import sql
 import utils
 
 
@@ -327,6 +333,263 @@ class Moderation(commands.Cog):
         #
         # await main.cleanup()
 
+    @commands.command(usage="findwordlist [suppress_embeds?: true/false]", description="Find members matching wordlist naming pattern")
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def findwordlist(self, ctx, suppress=False):
+        mems = [m for m in ctx.guild.members if all(w in self.client.wordlist for w in m.name.lower().split()) and m.name.istitle()]
+        print(len(mems))
+        print([m.name for m in mems[:10]])
+        msg_data = await sql.get_all_logs(self.client.pool)
+        msg_data = {r[1]: r[2] for r in msg_data if r[0] == ctx.guild.id}
+        no_messages = [m for m in mems if msg_data.get(m.id, 0) == 0]
+        one_message = [m for m in mems if msg_data.get(m.id, 0) == 1]
+
+        if not suppress:
+            both = no_messages
+            both.extend(one_message)
+            lines = textwrap.wrap("".join([m.mention for m in both]), width=2000)
+            for l in lines:
+                await ctx.send(l, delete_after=0.01)
+
+
+            base_embed = discord.Embed(title=f"Results (0 Messages)", description=f"Members with wordlist name matches & no sent messages:\n__**{len(no_messages)}** members.__",
+                                  color=discord.Color.blue())
+            embed = base_embed
+            lines = textwrap.wrap(' | '.join([m.mention for m in no_messages]), width=1024)
+            for i, l in enumerate(lines, start=1):
+                if len(embed) + len(l) > 6000:
+                    await ctx.send(embed=embed)
+                    embed.description = ""
+                    embed.clear_fields()
+                embed.add_field(name=f"Names: ({i}/{len(lines)})", value=l, inline=False)
+
+            await ctx.send(embed=embed)
+
+            embed = discord.Embed(title="Results (1 Message)", description=f"Members with wordlist name matches & 1 sent message:\n__**{len(one_message)}** members.__",
+                                  color=discord.Color.blue())
+
+            lines = textwrap.wrap(' | '.join([m.mention for m in one_message]), width=1024)
+            for i, l in enumerate(lines, start=1):
+                if len(embed)+ len(l) > 6000:
+                    if len(embed) + len(l) > 6000:
+                        await ctx.send(embed=embed)
+                        embed.description = ""
+                        embed.clear_fields()
+                embed.add_field(name=f"Names: ({i}/{len(lines)})", value=l, inline=False)
+
+            await ctx.send(embed=embed)
+
+        default_0 = [m for m in no_messages if m.avatar_url == m.default_avatar_url]
+        default_1 = [m for m in one_message if m.avatar_url == m.default_avatar_url]
+
+
+        await ctx.send(f"Wordlist name detection sums:\n**{len(no_messages)}** members with no messages\n**{len(one_message)}** members with 1 message"
+                       f"\n\n**{len(default_0)}** members with no messages & default pfp\n**{len(default_1)}** members with 1 message & default pfp")
+
+        embed = discord.Embed(title="Actions:", description="1️⃣ - to kick all accounts with 0 messages.\n2️⃣ - to kick all accounts with 0 messages & default pfp"
+                                                            "\n❌ - to take no actions", color=discord.Color.orange())
+        msg = await ctx.send(embed=embed)
+        await msg.add_reaction("1️⃣")
+        await msg.add_reaction("2️⃣")
+        await msg.add_reaction("❌")
+
+        def check(payload):
+            return payload.user_id == ctx.author.id and payload.message_id == msg.id and str(payload.emoji) in ["1️⃣", "2️⃣", "❌"]
+
+        try:
+            payload = await self.client.wait_for('raw_reaction_add', timeout=10800, check=check)  # Wait 1 hr max
+        except asyncio.TimeoutError:
+            embed.title = "Timed out!"
+            embed.description = f"Timed out! Please run `{ctx.prefix}findwordlist` again to perform actions on these results."
+            embed.colour = discord.Color.red()
+            return await msg.edit(embed=embed)
+
+        if str(payload.emoji) == "1️⃣":
+            kicklist = no_messages
+        elif str(payload.emoji) == "2️⃣":
+            kicklist = default_0
+        else:
+            return await msg.delete()
+
+        embed.title = f"Kicking... (0/{len(kicklist)})"
+        embed.description = "Kicking members with 0 messages"
+        embed.description += " and default profile photos" if str(payload.emoji) == "2️⃣" else ""
+        embed.description += "\nPlease wait... This can take a few minutes to complete."
+        embed.colour = discord.Color.gold()
+        await msg.edit(embed=embed)
+        # kick members here
+        for i, m in enumerate(kicklist, start=1):
+            if i % 100 == 0:
+                embed.title = f"Kicking... ({i}/{len(kicklist)})"
+                await msg.edit(embed=embed)
+            await m.kick(reason=f"Name matching wordlist & no messages sent (Suspected Bot)")
+
+        embed.title = "Success!"
+        embed.description = f"__**{len(kicklist)}** members successfully kicked!__\n\nRequested by: {ctx.author.mention} ({ctx.author.display_name}#{ctx.author.discriminator})"
+        embed.colour = discord.Color.green()
+        embed.set_footer(text="©Cryptographer")
+        embed.timestamp = datetime.datetime.utcnow()
+        await msg.edit(embed=embed)
+
+    # GIF = b'\x47\x49\x46\x38\x37\x61'
+    # PNG = b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'
+    # JPG = b'\xFF\xD8\xFF\xD8'
+    # JPEG = b'\xFF\xD8\xFF\xE0\x00\x10\x4A\x46\x49\x46\x00\x01'
+    # WEBP = b'\x52\x49\x46\x46'
+    # len_mapping = {'JPG': len(JPG), 'JPEG': len(JPEG), 'PNG': len(PNG), 'GIF': len(GIF), 'WEBP': len(WEBP)}
+    #
+    # def chop_header(arg: bytes):
+    #     if arg.startswith((GIF, PNG, JPG, JPEG, WEBP)):
+    #         if arg.startswith(GIF):
+    #             print("GIF")
+    #             return arg[len_mapping['GIF']:]
+    #         if arg.startswith(PNG):
+    #             print("PNG")
+    #             return arg[len_mapping['PNG']:]
+    #         if arg.startswith(JPG):
+    #             print("JPG")
+    #             return arg[len_mapping['JPG']:]
+    #         if arg.startswith(JPEG):
+    #             print("JPEG")
+    #             return arg[len_mapping['JPEG']:]
+    #         if arg.startswith(WEBP):
+    #             print("WEBP")
+    #             return arg[len_mapping['WEBP']:]
+    #     raise ValueError('Bytes didnt match expected headers')
+    #
+    #
+    # b1 = chop_header(await user1.avatar_url.read())
+    # b2 = chop_header(await user2.avatar_url.read())
+    #
+    # print(b1)
+    #
+    # print(len(b1))
+    # print(len(b2))
+    # print(b1==b2)
+
+    @commands.command(usage="photoblacklist <user>")
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def photoblacklist(self, ctx, user: discord.User):
+        photo_hash = hash(await user.avatar_url_as(format='jpg', size=64).read())
+        await sql.update_photo_hash(self.client.pool, user.id, photo_hash)
+
+        await ctx.guild.chunk()
+        msg_data = await sql.get_all_logs(self.client.pool)
+        msg_data = {r[1]: r[2] for r in msg_data if r[0] == ctx.guild.id}
+        memlist = [m for m in ctx.guild.members if msg_data.get(m.id, 0) < 10]
+
+        embed = discord.Embed(title="Fetching Photos From Discord...", description="Please wait while profile photos are retrieved from discord.\n", color=discord.Color.gold())
+        embed.add_field(name="Members to be Retrieved:", value=f"{len(memlist)} members in the server with msg counts <10.")
+        embed.timestamp = datetime.datetime.utcnow()
+        msg = await ctx.send(embed=embed)
+
+        filtered: list[tuple[discord.Member, str]] = []
+        for m in memlist:
+            av = m.avatar_url_as(format='jpg', size=64)
+            if av != m.default_avatar_url:
+                filtered.append((m, av))
+        print(len(filtered))
+        await ctx.send(len(filtered))
+
+        embed = discord.Embed(title="Checking Image Similarities...", description="Please wait while member list is indexed for photo hashes."
+                                                                                  "This can take up to 30 minutes with >50,000 members.", color=discord.Color.orange())
+        embed.add_field(name="Members checked:", value=f"**0** / {len(memlist)} members checked\n__{0}__ matches found.")
+        embed.set_thumbnail(url="https://i.imgur.com/nLRgnZf.gif")
+        embed.set_footer(text='Elapsed: 0s | Est. Left: Calculating...')
+        embed.timestamp = datetime.datetime.utcnow()
+        await msg.edit(embed=embed)
+
+        matches: list[discord.Member] = []
+        failed: list[discord.Member] = []
+        sql_data: list = []
+
+        starttime = datetime.datetime.utcnow()
+        last_update = 0
+
+        for i, (m, av) in enumerate(filtered, start=1):
+            if i % 15 == 0:
+                elapsed_s = (datetime.datetime.utcnow() - starttime).total_seconds()
+                if elapsed_s - last_update > 30:
+                    last_update = elapsed_s
+                    minutes, seconds = divmod(elapsed_s, 60)
+                    l_min, l_secs = divmod(int((elapsed_s/i)*len(filtered)), 60)
+                    embed.set_footer(text=f'Elapsed: {minutes}m{seconds}s | Est. Left: {l_min}m{l_secs}s')
+                    embed.set_field_at(0, name="Members checked:", value=f"**{i}** / {len(memlist)} members checked\n__{len(matches)}__ matches found.\n{len(failed)} members "
+                                                                         f"failed to be retrieved.")
+                    await msg.edit(embed=embed)
+
+            if i % 100 == 0:
+                print("Updating SQL Hashes")
+                await sql.batch_update_photo_hashes(self.client.pool, sql_data)
+                print("Done updating.")
+                sql_data = []
+
+            if len(failed) > 20:
+                embed = discord.Embed(title="Error!", description="Failed to retrieve >20 members profile photos! Please try this command again later.", color=discord.Color.red())
+                return await msg.edit(embed=embed)
+
+            try:
+                m_hash = hash(await m.avatar_url_as(format='jpg', size=64).read())
+                if photo_hash == m_hash:
+                    matches.append(m)
+                    sql_data.append((m.id, m_hash))
+            except discord.DiscordException:
+                print("FAILED")
+                failed.append(m)
+
+        embed = discord.Embed(title="Success!", description=f"**{len(matches)}** members with identical profile photos found!\n\nTo ban all detected members & blacklist this "
+                                                            f"photo, click the ✅\nClick the ❌ to ignore this result.", color=discord.Color.green())
+        embed.set_thumbnail(url=user.avatar_url)
+        embed.set_footer(text="©Cryptographer")
+        embed.timestamp = datetime.datetime.utcnow()
+        await msg.edit(embed=embed)
+        await ctx.send(f"Example Detections ({'20' if len(matches) > 20 else len(matches)}/{len(matches)}):\n{''.join([m.mention for m in matches[:20]])}")
+        await msg.add_reaction("✅")
+        await msg.add_reaction("❌")
+
+        def check(payload):
+            return payload.user_id == ctx.author.id and payload.message_id == msg.id and str(payload.emoji) in ["✅", "❌"]
+
+        try:
+            payload = await self.client.wait_for('raw_reaction_add', timeout=10800, check=check)  # Wait 1 hr max
+        except asyncio.TimeoutError:
+            embed.title = "Timed out!"
+            embed.description = f"Timed out! Please run `{ctx.prefix}photoblacklist` again to perform any actions."
+            embed.colour = discord.Color.red()
+            return await msg.edit(embed=embed)
+
+        if str(payload.emoji) == "❌":
+            embed.title = "Cancelled!"
+            embed.description = f"No members were banned. No photos were added to the blacklist\nPlease run `{ctx.prefix}photoblacklist` again to perform any actions."
+            embed.colour = discord.Color.red()
+            return await msg.edit(embed=embed)
+        else:
+            self.client.banned_photos[ctx.guild.id] = self.client.banned_photos.get(ctx.guild.id, set()).append(photo_hash)
+            await sql.set_banned_photo(self.client.pool, ctx.guild.id, user.id, banned=True)
+
+            matches.append(user)
+
+            embed.title = f"Banning Matches... (0/{len(matches)})"
+            embed.description = "Please wait... This can take a few minutes to complete."
+            embed.set_thumbnail(url=user.avatar_url)
+            embed.colour = discord.Color.gold()
+            await msg.edit(embed=embed)
+
+            # kick members here
+            for i, m in enumerate(matches, start=1):
+                if i % 100 == 0:
+                    embed.title = f"Kicking... ({i}/{len(matches)})"
+                    await msg.edit(embed=embed)
+                await m.ban(reason=f"PFP matching blacklisted profile photo.")
+
+            embed.title = "Success!"
+            embed.description = f"__**{len(matches)}** members successfully banned!__\n\nRequested by: {ctx.author.mention} ({ctx.author.display_name}#{ctx.author.discriminator})"
+            embed.colour = discord.Color.green()
+            embed.set_footer(text="©Cryptographer")
+            embed.timestamp = datetime.datetime.utcnow()
+            await msg.edit(embed=embed)
 
 
 
@@ -357,3 +620,4 @@ def setup(client):
 
 def is_not_pinned(msg):
     return False if msg.pinned else True
+

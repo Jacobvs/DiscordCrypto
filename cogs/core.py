@@ -21,6 +21,24 @@ class Core(commands.Cog):
     def __init__(self, client):
         self.client = client
 
+    @commands.command(usage="donate", description="Support the project & hosting fees! Crypto donation links!")
+    async def donate(self, ctx):
+        embed = discord.Embed(title="Donation Links!", description="Thank you for supporting the bot's development & hosting fees!\n\nWe hate scammers as much as you do, "
+                              "however, servers are expensive – so we truly appreciate any and all"
+                                                                   "donations!", color=discord.Color.green())
+        embed.set_author(name="Cryptographer", icon_url=ctx.bot.user.avatar_url)
+        embed.set_thumbnail(url=ctx.bot.user.avatar_url)
+        embed.add_field(name="BTC / BCH:", value="```yml\nBTC:\nbc1qqcafrpnqswfrcjexc8yflx8jyfu2xefnpa4yh9\nBCH:\nbitcoincash:qqz3p7swawutt5esfxcmtyul5grgzlpaccjnvg2z30```",
+                        inline=False)
+        embed.add_field(name="ETH & ERC20 Tokens:", value="```yml\nETH:\n0x87ED595eB5388bb5f57806640249e1caf3075480```", inline=False)
+        embed.add_field(name="Reddit MOON(s):", value="```yml\nReddit Vault Tip:\nDarkmatter-\nRinkeby Testnet:\n0xda0Ef7f1BA9E0E775C164106Eeb5B3F96001b14d```", inline=False)
+        embed.add_field(name="ADA (Cardano):", value="```yml\nADA:\naddr1q8u653vrpjz4zth9vmntu7zkzwg65jq46nmf9r30qv05p2fhcf7yf4wxfsjqquzrfxrvh92v9tmma2fvr9z7xyjwkwrs7nggwf```",
+                        inline=False)
+        owner = self.client.get_user(self.client.owner_id)
+        embed.set_footer(text=f"DM Darkmatter#7321 for other crypto!", icon_url=owner.avatar_url)
+        embed.timestamp = datetime.utcnow()
+        await ctx.send(embed=embed)
+
     @commands.command(usage="testimg <channel>", description='test an image link')
     async def testimg(self, ctx, channel: discord.TextChannel):
         m = await ctx.send(file=discord.File(open('data/test.png', 'rb')))
@@ -332,9 +350,29 @@ class Core(commands.Cog):
             embed.description = f"{ctx.author} cancelled this action. No members were banned."
             await msg.edit(embed=embed)
 
-
-
-
+    # @commands.command(usage="syncspoken <low_role>")
+    # @commands.guild_only()
+    # @commands.is_owner()
+    # async def syncspoken(self, ctx):  # , low_role: discord.Role):
+    #     """Sync all members who have spoken in the server"""
+    #     # memlist = [m for m in ctx.guild.members if m.top_role == low_role]
+    #     # print(len(memlist))
+    #     msg_data = []
+    #     with open('data/all_mee6_data-set.json') as file:
+    #         data = json.load(file)
+    #         for r in data:
+    #             r[1] = int(r[1])
+    #             msg_data.append(tuple(r))
+    #
+    #     print(len(msg_data))
+    #
+    #     async with self.client.pool.acquire() as conn:
+    #         async with conn.cursor() as cursor:
+    #             sql = "INSERT INTO crypto.logging (gid, uid, msg_count) VALUES (%s, %s, %s)"
+    #             await cursor.executemany(sql, data)
+    #             await conn.commit()
+    #
+    #     await ctx.send(f"**{len(msg_data)}** members were added to the log database.")
 
 
 def setup(client):

@@ -5,7 +5,7 @@ from discord.ext import commands
 def is_staff_check():
     """Check if user is staff in the server"""
     def predicate(ctx):
-        is_staff(ctx.bot, ctx.guild, ctx.author)
+        return is_staff(ctx.bot, ctx.guild, ctx.author)
     return commands.check(predicate)
 
 def is_staff(client, guild, member):

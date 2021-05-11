@@ -4,7 +4,7 @@
         "captcha_status": false,
         "duplicate_status": true,
         "min_account_age_seconds": -1,
-        "bot_channel_only": ["fear", "fng", "greed", "stats", "help"],
+        "bot_channel_only": ["greed", "stats", "hangman", "connect4", "highlow", "tictactoe", "minesweeper", "rps"],
         "roles": {
             "verified_role": 608524630113779722,
             "temporary_role": 679606142678073355,
