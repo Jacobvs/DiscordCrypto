@@ -523,7 +523,8 @@ class Events(commands.Cog):
         if photo_hash:
             await sql.update_photo_hash(self.client.pool, member.id, photo_hash, member.guild.id)
 
-            if photo_hash in self.client.banned_photos.get(member.guild.id, set()):
+            if (member.guild.id, photo_hash) in self.client.banned_photos or \
+                    any(utils.hamming_distance(hsh, photo_hash) < 5 for gid, hsh in self.client.banned_photos if gid == member.guild.id):
                 print(f"Member joined with banned photo: {member.name} (ID: {member.id})")
                 try:
                     embed = discord.Embed(description=f"{member.mention} {member.name}#{member.discriminator}", color=discord.Color.from_rgb(0, 0, 0))

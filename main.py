@@ -54,7 +54,7 @@ bot.variables = {}
 bot.spoken = {}
 bot.soft_muted = set([])
 bot.sent_messages = {}
-bot.banned_photos = {}
+bot.banned_photos = set([])
 
 with open('data/variables.json', 'r') as file:
     bot.maintenance_mode = json.load(file).get("maintenance_mode")
@@ -78,12 +78,13 @@ async def on_ready():
 
     for g in bot.guilds:
         bot.spoken[g.id] = set()
-        bot.banned_photos[g.id] = set()
 
     data = await sql.get_all_logs(bot.pool)
     for record in data:
         if record[2] > 0:
             bot.spoken.get(record[0], set()).add(record[1])
+        if record[5]:
+            bot.banned_photos.add((record[0], record[4]))
 
 
     await cleanup()

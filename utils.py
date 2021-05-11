@@ -351,6 +351,16 @@ async def get_photo_hash(client, member: Union[discord.User, discord.Member]):
             return None
 
 
+def hamming_distance(first: str, second: str) -> int:
+    """Calculate Hamming Distance between to hex string
+    """
+    try:
+        a = bin(int(first, 16))[2:].zfill(64)
+        b = bin(int(second, 16))[2:].zfill(64)
+    except (TypeError, ValueError):
+        return 999
+    return len(list(filter(lambda x: ord(x[0]) ^ ord(x[1]), zip(a, b))))
+
 class Card:
     """Class that represents a normal playing card."""
 

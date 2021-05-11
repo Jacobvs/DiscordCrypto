@@ -492,7 +492,7 @@ class Moderation(commands.Cog):
         sql_data: list = []
         start_time = datetime.datetime.utcnow()
 
-        async with utils.SephamoreRateLimiter(rate_limit=1000, concurrency_limit=15) as rate_limiter:
+        async with utils.SephamoreRateLimiter(rate_limit=10000, concurrency_limit=3000) as rate_limiter:
             async with aiohttp.ClientSession(headers=headers) as cs:
                 i = 0
 
@@ -554,19 +554,29 @@ class Moderation(commands.Cog):
     @commands.guild_only()
     @checks.is_staff_check()
     async def photoblacklist(self, ctx, user: discord.User):
-        photo_hash = hash(await user.avatar_url_as(format='jpg', size=64).read())
-        await sql.update_photo_hash(self.client.pool, user.id, photo_hash, ctx.guild.id)
 
         res = await self.sync_photo_hashes(ctx.guild, ctx.channel)
         if not res:
             await ctx.send(f"PFP Hashing failed! Results shown may not be fully accurate! Please run `{ctx.prefix}syncphotohashes` to get accurate results.")
 
         log_data = await sql.get_all_logs(self.client.pool)
-        log_matches = {r[1] for r in log_data if r[4] and r[4] == photo_hash}
+
+        photo_hash = next(r[4] for r in log_data if r[1] == user.id)
+        if not photo_hash:
+            photo_hash = await utils.get_photo_hash(self.client, user)
+            if not photo_hash:
+                return await ctx.send(f"No PFP Hash for the specified user! Please run `{ctx.prefix}syncphotohashes` to sync this user's profile photo.")
+            elif any(r[0] == user.id for r in log_data):
+                await sql.update_photo_hash(self.client.pool, user.id, photo_hash, ctx.guild.id, new=False)
+            else:
+                await sql.update_photo_hash(self.client.pool, user.id, photo_hash, ctx.guild.id)
+
+        log_matches = {r[1] for r in log_data if r[4] and (r[4] == photo_hash or utils.hamming_distance(r[4], photo_hash) < 5)}
         matches = [m for m in ctx.guild.members if m.id in log_matches]
 
         embed = discord.Embed(title="Success!", description=f"**{len(matches)}** members with identical profile photos found!\n\nTo ban all detected members & blacklist this "
                                                             f"photo, click the ✅\nClick the ❌ to ignore this result.", color=discord.Color.green())
+        embed.add_field(name="Photo Hash:", value=photo_hash)
         embed.set_thumbnail(url=user.avatar_url)
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()
@@ -580,6 +590,7 @@ class Moderation(commands.Cog):
 
         try:
             payload = await self.client.wait_for('raw_reaction_add', timeout=10800, check=check)  # Wait 1 hr max
+            await msg.clear_reactions()
         except asyncio.TimeoutError:
             embed.title = "Timed out!"
             embed.description = f"Timed out! Please run `{ctx.prefix}photoblacklist` again to perform any actions."
@@ -592,7 +603,7 @@ class Moderation(commands.Cog):
             embed.colour = discord.Color.red()
             return await msg.edit(embed=embed)
         else:
-            self.client.banned_photos[ctx.guild.id] = self.client.banned_photos.get(ctx.guild.id, set()).append(photo_hash)
+            self.client.banned_photos.add((ctx.guild.id, photo_hash))
             await sql.set_banned_photo(self.client.pool, ctx.guild.id, user.id, banned=True)
 
             matches.append(user)
@@ -605,10 +616,10 @@ class Moderation(commands.Cog):
 
             # kick members here
             for i, m in enumerate(matches, start=1):
-                if i % 100 == 0:
+                if i % 10 == 0:
                     embed.title = f"Kicking... ({i}/{len(matches)})"
                     await msg.edit(embed=embed)
-                await m.ban(reason=f"PFP matching blacklisted profile photo.")
+                await ctx.guild.ban(m, reason=f"PFP matching blacklisted profile photo.")
 
             embed.title = "Success!"
             embed.description = f"__**{len(matches)}** members successfully banned!__\n\nRequested by: {ctx.author.mention} ({ctx.author.display_name}#{ctx.author.discriminator})"
