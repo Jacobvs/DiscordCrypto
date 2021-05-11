@@ -515,23 +515,28 @@ class Events(commands.Cog):
             except discord.DiscordException:
                 pass
 
-        photo_hash = hash(await member.avatar_url_as(format='jpg', size=64).read())
-        await sql.update_photo_hash(self.client.pool, member.id, photo_hash, member.guild.id)
+        if not member.avatar:
+            photo_hash = str(member.default_avatar)
+        else:
+            photo_hash = await utils.get_photo_hash(self.client, member)
 
-        if photo_hash in self.client.banned_photos.get(member.guild.id, set()):
-            print(f"Member joined with banned photo: {member.name} (ID: {member.id})")
-            try:
-                embed = discord.Embed(description=f"{member.mention} {member.name}#{member.discriminator}", color=discord.Color.from_rgb(0, 0, 0))
-                embed.set_author(name="Banned (Blacklisted Photo)", icon_url=member.avatar_url)
-                embed.set_thumbnail(url=member.avatar_url)
-                embed.set_footer(text=f"ID: {member.id}")
-                if not all(ord(char) < 128 for char in member.name):
-                    embed.add_field(name="Unicode Name:", value=f"`{member.name}` - decoded: `{member.name.encode('unicode-escape')}`")
-                embed.timestamp = datetime.datetime.utcnow()
-                await self.client.variables[member.guild.id]['log_channel'].send(embed=embed)
-                await member.ban(reason="User joined with banned photo!")
-            except discord.DiscordException:
-                pass
+        if photo_hash:
+            await sql.update_photo_hash(self.client.pool, member.id, photo_hash, member.guild.id)
+
+            if photo_hash in self.client.banned_photos.get(member.guild.id, set()):
+                print(f"Member joined with banned photo: {member.name} (ID: {member.id})")
+                try:
+                    embed = discord.Embed(description=f"{member.mention} {member.name}#{member.discriminator}", color=discord.Color.from_rgb(0, 0, 0))
+                    embed.set_author(name="Banned (Blacklisted Photo)", icon_url=member.avatar_url)
+                    embed.set_thumbnail(url=member.avatar_url)
+                    embed.set_footer(text=f"ID: {member.id}")
+                    if not all(ord(char) < 128 for char in member.name):
+                        embed.add_field(name="Unicode Name:", value=f"`{member.name}` - decoded: `{member.name.encode('unicode-escape')}`")
+                    embed.timestamp = datetime.datetime.utcnow()
+                    await self.client.variables[member.guild.id]['log_channel'].send(embed=embed)
+                    await member.ban(reason="User joined with banned photo!")
+                except discord.DiscordException:
+                    pass
 
         if member.bot or self.client.variables[member.guild.id]['maintenance_mode']:
             print('Member joined in maintenance mode!')
@@ -727,9 +732,13 @@ class Events(commands.Cog):
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
         if before.avatar != after.avatar:
-            photo_hash = hash(await after.avatar_url_as(format='jpg', size=64).read())
+            if not after.avatar:
+                photo_hash = str(after.default_avatar)
+            else:
+                photo_hash = await utils.get_photo_hash(self.client, after)
             print(f"USER UPDATED AVATAR! (ID: {after.id}) | Hash: {photo_hash}")
-            await sql.update_photo_hash(self.client.pool, after.id, photo_hash, new=False)
+            if photo_hash:
+                await sql.update_photo_hash(self.client.pool, after.id, photo_hash, new=False)
 
 
 def setup(client):

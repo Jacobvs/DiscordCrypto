@@ -24,6 +24,7 @@ load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
 ocr_token = os.getenv('OCR_TOKEN')
 cmc_token = os.getenv('CMC_TOKEN')
+imagekit_token = os.getenv('IMAGEKIT_TOKEN')
 
 
 # noinspection PyUnusedLocal
@@ -48,6 +49,7 @@ bot.remove_command('help')
 bot.owner_id = 196282885601361920
 bot.OCR_TOKEN = ocr_token
 bot.CMC_TOKEN = cmc_token
+bot.IMAGEKIT_TOKEN = imagekit_token
 bot.variables = {}
 bot.spoken = {}
 bot.soft_muted = set([])

@@ -1,12 +1,17 @@
 import asyncio
 import datetime
 import difflib
+import math
 import re
+import time
 from enum import Enum
 import random
+from typing import Union
 
+import aiohttp
 import discord
 import numpy as np
+from async_generator import asynccontextmanager
 from discord.embeds import _EmptyEmbed
 from discord.ext.commands import BadArgument, Converter
 
@@ -166,6 +171,184 @@ class EmbedPaginator:
                 await msg.clear_reactions()
         except discord.NotFound:
             pass
+
+class SephamoreRateLimiter:
+    def __init__(self,
+                 rate_limit: int,
+                 concurrency_limit: int) -> None:
+        if not rate_limit or rate_limit < 1:
+            raise ValueError('rate limit must be non zero positive number')
+        if not concurrency_limit or concurrency_limit < 1:
+            raise ValueError('concurrent limit must be non zero positive number')
+
+        self.PAUSED = False
+        self.PAUSE_UNTIL = None
+        self.consumption_rate = 1 / rate_limit
+        self.tokens_queue = asyncio.Queue(rate_limit)
+        self.tokens_consumer_task = asyncio.get_event_loop().create_task(self.consume_tokens())
+        self.semaphore = asyncio.Semaphore(concurrency_limit)
+
+    async def add_token(self) -> None:
+        await self.tokens_queue.put(1)
+        return None
+
+    async def resume_later(self):
+        print(f"Ratelimited! Pausing for {self.PAUSE_UNTIL - time.monotonic()}s")
+        await asyncio.sleep(self.PAUSE_UNTIL - time.monotonic())
+        self.PAUSED = False
+        print("Resuming requests")
+
+    async def consume_tokens(self):
+        try:
+
+            last_consumption_time = 0
+
+            while True:
+                if self.PAUSED:
+                    await asyncio.sleep(self.PAUSE_UNTIL - time.monotonic())
+
+                if self.tokens_queue.empty():
+                    await asyncio.sleep(self.consumption_rate)
+                    continue
+
+                current_consumption_time = time.monotonic()
+                total_tokens = self.tokens_queue.qsize()
+                tokens_to_consume = self.get_tokens_amount_to_consume(
+                    self.consumption_rate,
+                    current_consumption_time,
+                    last_consumption_time,
+                    total_tokens
+                )
+
+                for i in range(0, tokens_to_consume):
+                    self.tokens_queue.get_nowait()
+
+                last_consumption_time = time.monotonic()
+
+                await asyncio.sleep(self.consumption_rate)
+        except asyncio.CancelledError:
+            # you can ignore the error here and deal with closing this task later but this is not advised
+            raise
+        except Exception as e:
+            # do something with the error and re-raise
+            raise
+
+    def hit_429(self, headers):
+        rate_limit = int(headers.get("X-Ratelimit-Limit", "1000"))
+        self.tokens_queue = asyncio.Queue(rate_limit)
+        while not self.tokens_queue.full():
+            self.tokens_queue.put(1)
+        interval = int(headers.get("X-Ratelimit-Interval", "1000")) / 1000.0
+        print(f"New limits | rate-limit: {rate_limit} / interval: {interval}s")
+
+        self.consumption_rate = rate_limit / interval
+        self.PAUSED = True
+        self.PAUSE_UNTIL = time.monotonic() + (int(headers.get("X-Ratelimit-Reset", "1000")) / 1000.0)
+
+        asyncio.get_event_loop().create_task(self.resume_later())
+
+
+    @staticmethod
+    def get_tokens_amount_to_consume(consumption_rate, current_consumption_time, last_consumption_time, total_tokens):
+        time_from_last_consumption = current_consumption_time - last_consumption_time
+        calculated_tokens_to_consume = math.floor(time_from_last_consumption / consumption_rate)
+        tokens_to_consume = min(total_tokens, calculated_tokens_to_consume)
+        return tokens_to_consume
+
+    @asynccontextmanager
+    async def throttle(self):
+        if self.PAUSED:
+            await asyncio.sleep(self.PAUSE_UNTIL - time.monotonic())
+        await self.semaphore.acquire()
+        await self.add_token()
+        try:
+            yield
+        finally:
+            self.semaphore.release()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            print("EXEPTION in aexit!")
+            print(exc_type)
+            print(exc_tb)
+            print(exc_val)
+
+        await self.close()
+
+    async def close(self) -> None:
+        if self.tokens_consumer_task and not self.tokens_consumer_task.cancelled():
+            try:
+                self.tokens_consumer_task.cancel()
+                await self.tokens_consumer_task
+            except asyncio.CancelledError:
+                # we ignore this exception but it is good to log and signal the task was cancelled
+                pass
+            except Exception as e:
+                # log here and deal with the exception
+                raise
+
+
+class RateLimiter:
+    """
+    Ratelimiting Subclass of aiohttp.ClientSession
+    Implements standard token bucket & handles 429 rate-limit headers
+    """
+
+    MAX_TOKENS = 100
+    PAUSED = False
+    INTERVAL = 0.25
+
+    def __init__(self, client: aiohttp.ClientSession):
+        self.client: aiohttp.ClientSession = client
+        self.tokens = self.MAX_TOKENS
+        self.updated_at = time.monotonic()
+        self.PAUSE_S = 0.0
+
+    async def get(self, url, **kwargs):
+        await self.wait_for_token()
+        return self.client.get(url=url, **kwargs)
+
+    async def wait_for_token(self):
+        if self.PAUSED:
+            await asyncio.sleep(self.PAUSE_S)
+            self.PAUSED = False
+        while self.tokens <= 1:
+            self.add_new_tokens()
+            await asyncio.sleep(self.INTERVAL)
+        self.tokens -= 1
+
+    def add_new_tokens(self):
+        now = time.monotonic()
+        time_since_update = now - self.updated_at
+        new_tokens = time_since_update * self.MAX_TOKENS
+        if self.tokens + new_tokens >= 1:
+            self.tokens = min(self.tokens + new_tokens, self.MAX_TOKENS)
+            self.updated_at = now
+
+    def hit_429(self, resp: aiohttp.ClientResponse):
+        self.tokens = 0
+        self.PAUSED = True
+        self.PAUSE_S = int(resp.headers.get("X-Ratelimit-Reset", "1000")) / 1000.0
+        print(f"Ratelimited! Pausing for {self.PAUSE_S}s")
+        self.MAX_TOKENS = int(resp.headers.get("X-Ratelimit-Limit", "1000"))
+        self.INTERVAL = int(resp.headers.get("X-Ratelimit-Interval", "1000")) / 1000.0
+        print(f"New limits | TOKENS: {self.MAX_TOKENS} / INTERVAL: {self.INTERVAL}s")
+
+
+async def get_photo_hash(client, member: Union[discord.User, discord.Member]):
+    base_url = "https://api.imagekit.io/v1/metadata?url=https://ik.imagekit.io/ugssigsf4u/avatars"
+    ext = ".webp?size=64"
+    headers = {'Authorization': f'Basic {client.IMAGEKIT_TOKEN}'}
+
+    async with aiohttp.ClientSession(headers=headers) as cs:
+        async with cs.get(url=f"{base_url}/{member.id}/{member.avatar}{ext}", headers=headers) as r:
+            if r.status == 200:
+                data = await r.json()
+                return data['pHash']
+            return None
 
 
 class Card:

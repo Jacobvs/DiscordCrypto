@@ -32,7 +32,7 @@ async def update_photo_hash(pool: aiomysql.Pool, uid, hash, gid=None, new=True):
                 await cursor.execute(sql, (gid, uid, hash))
             else:
                 sql = "UPDATE crypto.logging SET photo_hash = %s WHERE uid = %s"
-                await cursor.execute(sql, (uid, hash))
+                await cursor.execute(sql, (hash, uid))
             await conn.commit()
             return True
 

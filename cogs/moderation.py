@@ -1,13 +1,8 @@
 import asyncio
 import datetime
 import difflib
-import functools
-import hashlib
-import io
 import json
 import logging as logger
-import os
-from PIL import ImageChops, Image
 import textwrap
 from collections import Counter
 
@@ -433,7 +428,7 @@ class Moderation(commands.Cog):
         embed.timestamp = datetime.datetime.utcnow()
         await msg.edit(embed=embed)
 
-    async def sync_photo_hashes(self, guild, channel):
+    async def sync_photo_hashes(self, guild: discord.Guild, channel: discord.TextChannel):
         embed = discord.Embed(title="Fetching Photos From Discord...", description="Please wait while profile photos are retrieved from discord.\n", color=discord.Color.gold())
         embed.add_field(name="Members to be Retrieved:", value=f"{len(guild.members)} members in the server.")
         embed.timestamp = datetime.datetime.utcnow()
@@ -443,76 +438,112 @@ class Moderation(commands.Cog):
         log_data = await sql.get_all_logs(self.client.pool)
         log_uids = {r[1] for r in log_data}
         no_hashes = {r[1] for r in log_data if r[4] is None}
+        memlist: list[discord.Member] = [m for m in guild.members if (m.id in no_hashes or m.id not in log_uids) and m.avatar]
+        already_hashed = len(log_uids) - len(no_hashes)
 
-        await channel.send(f"log-data len: {len(log_data)}\nun-hashed len: {len(no_hashes)}")
-        memlist = [(m, m.avatar_url_as(format='jpg', size=64)) for m in guild.members if m.id in no_hashes or m.id not in log_uids]
+        defaults = [(guild.id, m.id, str(m.default_avatar)) for m in guild.members if (m.id in no_hashes or m.id not in log_uids) and not m.avatar]
+        print(f"Defaults: {len(defaults)} ({defaults[:1]})")
+        await sql.batch_update_photo_hashes(self.client.pool, defaults)
+        already_hashed += len(defaults)
 
-        desc = "Please wait while member list is indexed for photo hashes.\nThis can take over an hour for 50,000+ members.\n\n"
+        desc = "Please wait while member list is indexed for photo hashes.\nThis can take a long time (Est. 10m for 50,000+ members).\n"
         embed = discord.Embed(title="Checking Image Similarities...",
-                              description=desc + utils.textProgressBar(0, len(memlist), prefix="Progress: ", suffix="", decimals=2, length=13, fullisred=False),
+                              description=desc + utils.textProgressBar(already_hashed, len(memlist) + already_hashed, prefix="Progress: ", suffix="", decimals=2, length=13, fullisred=False),
                               color=discord.Color.orange())
-        embed.add_field(name="Members checked:", value=f"**0** / {len(memlist)} members checked\n__{0}__ matches found.")
+        embed.add_field(name="Members checked:", value=f"**{already_hashed}** / {len(memlist)+already_hashed} members hashed\n__{0}__ matches found.")
         embed.set_thumbnail(url="https://i.imgur.com/nLRgnZf.gif")
         embed.set_footer(text='Elapsed: 0s | Est. Left: Calculating...')
         embed.timestamp = datetime.datetime.utcnow()
         await msg.edit(embed=embed)
 
-        failed: list[discord.Member] = []
+
+        base_url = "https://api.imagekit.io/v1/metadata?url=https://ik.imagekit.io/ugssigsf4u/avatars"
+        ext = ".webp?size=64"
+        headers = {'Authorization': f'Basic {self.client.IMAGEKIT_TOKEN}'}
+
+        async def send_request(m: discord.Member, client_session: aiohttp.ClientSession, url: str, rate_limiter: utils.SephamoreRateLimiter):
+            async with rate_limiter.throttle():
+                response = await client_session.get(url)
+
+            # Why are the following lines not included in the rate limiter context?
+            # because all we want to control is the rate of io operations
+            # and since the following lines instruct reading the response stream into memory,
+            # it shouldn't block the next requests from sending
+            # (unless you have limited memory or large files to ingest.
+            # In that case you should add it to the context
+            # but also make sure you free memory for the next requests)!
+            # so we should now release the semaphore and let the
+            # stream reading begin async while letting the rest of the requests go on sending
+            if response.status == 429:
+                rate_limiter.hit_429(response.headers)
+                data = None
+            elif response.status == 200:
+                data = await response.json()
+                data = (m.guild.id, m.id, data['pHash'])
+            else:
+                print(f"ERROR ({response.status} - {response.reason}): {response.url}")
+                data = await response.text()
+                print(f"Message: {data}")
+                data = None
+            response.release()
+
+            return m, data
+
         sql_data: list = []
+        start_time = datetime.datetime.utcnow()
 
-        starttime = datetime.datetime.utcnow()
-        last_update = 0
+        async with utils.SephamoreRateLimiter(rate_limit=1000, concurrency_limit=15) as rate_limiter:
+            async with aiohttp.ClientSession(headers=headers) as cs:
+                i = 0
 
-        for i, (m, av) in enumerate(memlist, start=1):
-            if i % 50 == 0:
-                elapsed_s = int((datetime.datetime.utcnow() - starttime).total_seconds())
-                if elapsed_s - last_update > 30:
-                    last_update = elapsed_s
-                    minutes, seconds = divmod(elapsed_s, 60)
-                    l_min, l_secs = divmod(int((elapsed_s / i) * len(memlist)), 60)
-                    embed.description = desc + utils.textProgressBar(i, len(memlist), prefix="Progress: ", suffix="", decimals=2, length=13, fullisred=False)
-                    embed.set_footer(text=f'Elapsed: {minutes}m{seconds}s | Est. Left: {l_min}m{l_secs}s')
-                    embed.set_field_at(0, name="Members checked:", value=f"**{i}** / {len(memlist)} members checked\n{len(failed)} members "
-                                                                         f"failed to be retrieved.")
-                    await msg.edit(embed=embed)
+                async def run_tasks(task_list, count, sql_data_list):
+                    last_update = 0
+                    failed_list = []
 
-            if i % 500 == 0:
-                print("Updating SQL Hashes")
-                await sql.batch_update_photo_hashes(self.client.pool, sql_data)
-                print("Done updating.")
-                sql_data = []
+                    for future in asyncio.as_completed(task_list):
+                        m, data = await future
+                        count += 1
+                        if data is not None:
+                            sql_data_list.append(data)
+                        else:
+                            failed_list.append(m)
 
-            if len(failed) > 80:
-                embed = discord.Embed(title="Error!", description="Failed to retrieve >80 members profile photos! Please try this command again later.", color=discord.Color.red())
-                await msg.edit(embed=embed)
-                return False
+                        if count % 200 == 0:
+                            print(f"Updating SQL Hashes ({count})")
+                            await sql.batch_update_photo_hashes(self.client.pool, sql_data_list)
+                            sql_data_list.clear()
 
-            try:
-                m_hash = hash(await av.read())
-                sql_data.append((m.guild.id, m.id, m_hash))
-            except discord.DiscordException:
-                try:
-                    m_hash = hash(await av.read())
-                    sql_data.append((m.guild.id, m.id, m_hash))
-                except discord.DiscordException:
-                    print("FAILED")
-                    failed.append(m)
+                            elapsed_s = int((datetime.datetime.utcnow() - start_time).total_seconds())
+                            if elapsed_s - last_update > 15:
+                                last_update = elapsed_s
+                                minutes, seconds = divmod(elapsed_s, 60)
+                                l_min, l_secs = divmod(int((elapsed_s / count) * len(memlist)), 60)
+                                embed.description = desc + utils.textProgressBar(count + already_hashed, len(memlist) + already_hashed, prefix="Progress: ", suffix="", decimals=2, length=13,
+                                                                                 fullisred=False)
+                                embed.set_footer(text=f'Elapsed: {minutes}m{seconds}s | Est. Left: {l_min}m{l_secs}s')
+                                embed.set_field_at(0, name="Members hashes:", value=f"**{count + already_hashed}** / {len(memlist) + already_hashed} members checked\n{len(failed_list)} members "
+                                                                                    f"failed to be retrieved.")
+                                await msg.edit(embed=embed)
 
-        print("DONE.. Trying failed again.")
-        actual_fails = []
-        for m in failed:
-            try:
-                m_hash = hash(await m.avatar_url_as(format='jpg', size=64).read())
-                sql_data.append((m.guild.id, m.id, m_hash))
+                    return count, sql_data_list, failed_list
 
-            except discord.DiscordException:
-                actual_fails.append(m)
+                tasks = [send_request(m, client_session=cs, url=url, rate_limiter=rate_limiter) for m, url in
+                         [(m, f"{base_url}/{m.id}/{m.avatar}{ext}") for m in memlist]
+                         ]
+                i, sql_data, failed = await run_tasks(tasks, i, sql_data)
+                print("DONE.. Trying failed again.")
 
-        print("Updating SQL Hashes")
+                tasks = [send_request(m, client_session=cs, url=url, rate_limiter=rate_limiter) for m, url in
+                         [(m, f"{base_url}/{m.id}/{m.avatar}{ext}") for m in failed]
+                         ]
+                i, sql_data, failed = await run_tasks(tasks, i, sql_data)
+
+
+        print("Updating Final SQL Hashes")
         await sql.batch_update_photo_hashes(self.client.pool, sql_data)
         print("Done updating.")
 
-        await channel.send("Failed to get:\n" + "".join([m.mention for m in actual_fails]))
+        await channel.send("Failed to get:\n" + "".join([m.mention for m in failed]))
         embed = discord.Embed(title="Success!", description=f"Added **{len(memlist)}** profile hashes to the database!", color=discord.Color.blue())
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()
@@ -592,9 +623,10 @@ class Moderation(commands.Cog):
     @checks.is_staff_check()
     @commands.max_concurrency(1, per=discord.ext.commands.BucketType.guild)
     async def syncphotohashes(self, ctx):
-        log_data = await sql.get_all_logs(self.client.pool)
-        await ctx.send(log_data[0])
-        # await self.sync_photo_hashes(ctx.guild, ctx.channel)
+        # log_data = await sql.get_all_logs(self.client.pool)
+        # await ctx.send(log_data[0])
+
+        await self.sync_photo_hashes(ctx.guild, ctx.channel)
 
     # @commands.command(usage='pban <user> <reason>')
     # @commands.is_owner()
