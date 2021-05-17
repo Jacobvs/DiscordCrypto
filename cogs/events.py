@@ -108,10 +108,10 @@ class Events(commands.Cog):
             response = await msg.channel.send("Checking Image... Please wait.")
         else:
             response = None
-        log_channel = self.client.variables[msg.guild.id]['log_channel']
-        if log_channel:
+        file_storage = self.client.variables[msg.guild.id]['file_storage']
+        if file_storage:
             try:
-                image_ref = await log_channel.send(content="Image(s) uploaded in support channels:",
+                image_ref = await file_storage.send(content="Image(s) uploaded in support channels:",
                                                    files=[await a.to_file(use_cached=True) for a in msg.attachments])
                 img = image_ref.attachments[0]
             except discord.DiscordException:
@@ -206,7 +206,8 @@ class Events(commands.Cog):
                     elif re.search(r'(?:\S+\s\S+)\s\d{1,2}:\d{2}', parsed_text):
                         lines = re.split(r'(?:\S+\s\S+)\s\d{1,2}:\d{2}', parsed_text)[0].splitlines()
                         lines = list(filter(None, lines))
-                        tests.append(lines[0])
+                        if lines:
+                            tests.append(lines[0])
                         if len(lines) > 1:
                             if ' ' in lines[0]:
                                 words = list(filter(None, lines[0].split()))

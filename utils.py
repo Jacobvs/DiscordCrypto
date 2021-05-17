@@ -650,12 +650,12 @@ class Duration(Converter):
         return now + delta
 
 
-def duration_formatter(tsecs, ptype):
+def duration_formatter(tsecs, ptype=None):
     days, remainder = divmod(tsecs, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, seconds = divmod(remainder, 60)
     seconds = round(seconds)
-    fduration = f"This {ptype} was issued for "
+    fduration = f"This {ptype} was issued for " if ptype else ""
     if days != 0:
         fduration += f"{int(days)} Days, "
     if hours != 0:

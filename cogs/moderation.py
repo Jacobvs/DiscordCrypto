@@ -332,12 +332,22 @@ class Moderation(commands.Cog):
     @commands.guild_only()
     @checks.is_staff_check()
     async def findwordlist(self, ctx, suppress=False):
-        mems = [m for m in ctx.guild.members if all(w in self.client.wordlist for w in m.name.lower().split()) and m.name.istitle()]
-        print(len(mems))
-        print([m.name for m in mems[:10]])
+        mems = []
+        new_mems = []
+        for m in ctx.guild.members:
+            if m.name.istitle():
+                words = m.name.lower().split()
+                if words[0] in self.client.adjective_list or (len(words) == 2 and words[1] in self.client.noun_list):
+                    hours, rem = divmod((datetime.datetime.utcnow() - m.created_at).total_seconds(), 3600)
+                    if hours < 12:
+                        new_mems.append(m)
+                    else:
+                        mems.append(m)
+
         msg_data = await sql.get_all_logs(self.client.pool)
         msg_data = {r[1]: r[2] for r in msg_data if r[0] == ctx.guild.id}
         no_messages = [m for m in mems if msg_data.get(m.id, 0) == 0]
+        no_messages_12 = [m for m in new_mems if msg_data.get(m.id, 0) == 0]
         one_message = [m for m in mems if msg_data.get(m.id, 0) == 1]
 
         if not suppress:
@@ -380,17 +390,19 @@ class Moderation(commands.Cog):
 
 
         await ctx.send(f"Wordlist name detection sums:\n**{len(no_messages)}** members with no messages\n**{len(one_message)}** members with 1 message"
-                       f"\n\n**{len(default_0)}** members with no messages & default pfp\n**{len(default_1)}** members with 1 message & default pfp")
+                       f"\n\n**{len(default_0)}** members with no messages & default pfp\n**{len(default_1)}** members with 1 message & default pfp"
+                       f"\n**{len(new_mems)}** members with account creation newer than 12 hours")
 
         embed = discord.Embed(title="Actions:", description="1️⃣ - to kick all accounts with 0 messages.\n2️⃣ - to kick all accounts with 0 messages & default pfp"
-                                                            "\n❌ - to take no actions", color=discord.Color.orange())
+                                                            "\n3️⃣ - to kick all accounts <12 hours old.\n❌ - to take no actions", color=discord.Color.orange())
         msg = await ctx.send(embed=embed)
         await msg.add_reaction("1️⃣")
         await msg.add_reaction("2️⃣")
+        await msg.add_reaction("3️⃣")
         await msg.add_reaction("❌")
 
         def check(payload):
-            return payload.user_id == ctx.author.id and payload.message_id == msg.id and str(payload.emoji) in ["1️⃣", "2️⃣", "❌"]
+            return payload.user_id == ctx.author.id and payload.message_id == msg.id and str(payload.emoji) in ["1️⃣", "2️⃣", "3️⃣", "❌"]
 
         try:
             payload = await self.client.wait_for('raw_reaction_add', timeout=10800, check=check)  # Wait 1 hr max
@@ -405,12 +417,14 @@ class Moderation(commands.Cog):
             kicklist = no_messages
         elif str(payload.emoji) == "2️⃣":
             kicklist = default_0
+        elif str(payload.emoji) == "3️⃣":
+            kicklist = new_mems
         else:
             return await msg.delete()
 
         embed.title = f"Kicking... (0/{len(kicklist)})"
-        embed.description = "Kicking members with 0 messages"
-        embed.description += " and default profile photos" if str(payload.emoji) == "2️⃣" else ""
+        embed.description = "Kicking members "
+        embed.description += "with 0 messages and default profile photos." if str(payload.emoji) in ["1️⃣", "2️⃣"] else "with an account creation date <12 hours old."
         embed.description += "\nPlease wait... This can take a few minutes to complete."
         embed.colour = discord.Color.gold()
         await msg.edit(embed=embed)
@@ -419,7 +433,7 @@ class Moderation(commands.Cog):
             if i % 100 == 0:
                 embed.title = f"Kicking... ({i}/{len(kicklist)})"
                 await msg.edit(embed=embed)
-            await m.kick(reason=f"Name matching wordlist & no messages sent (Suspected Bot)")
+            await m.kick(reason=f"Name matching wordlist & {'account creation <12h' if str(payload.emoji) == '3️⃣' else 'no messages sent'} (Suspected Bot)")
 
         embed.title = "Success!"
         embed.description = f"__**{len(kicklist)}** members successfully kicked!__\n\nRequested by: {ctx.author.mention} ({ctx.author.display_name}#{ctx.author.discriminator})"
@@ -443,8 +457,13 @@ class Moderation(commands.Cog):
 
         defaults = [(guild.id, m.id, str(m.default_avatar)) for m in guild.members if (m.id in no_hashes or m.id not in log_uids) and not m.avatar]
         print(f"Defaults: {len(defaults)} ({defaults[:1]})")
-        await sql.batch_update_photo_hashes(self.client.pool, defaults)
-        already_hashed += len(defaults)
+        if len(defaults) > 0:
+            await sql.batch_update_photo_hashes(self.client.pool, defaults)
+            already_hashed += len(defaults)
+
+        if len(memlist) == 0:
+            await msg.delete()
+            return True
 
         desc = "Please wait while member list is indexed for photo hashes.\nThis can take a long time (Est. 10m for 50,000+ members).\n"
         embed = discord.Embed(title="Checking Image Similarities...",
@@ -555,13 +574,16 @@ class Moderation(commands.Cog):
     @checks.is_staff_check()
     async def photoblacklist(self, ctx, user: discord.User):
 
+        if user.avatar_url == user.default_avatar_url:
+            raise discord.ext.commands.BadArgument(message="Cannot photo-blacklist a user with a default profile photo!")
+
         res = await self.sync_photo_hashes(ctx.guild, ctx.channel)
         if not res:
             await ctx.send(f"PFP Hashing failed! Results shown may not be fully accurate! Please run `{ctx.prefix}syncphotohashes` to get accurate results.")
 
         log_data = await sql.get_all_logs(self.client.pool)
 
-        photo_hash = next(r[4] for r in log_data if r[1] == user.id)
+        photo_hash = next((r[4] for r in log_data if r[1] == user.id), None)
         if not photo_hash:
             photo_hash = await utils.get_photo_hash(self.client, user)
             if not photo_hash:
@@ -574,14 +596,15 @@ class Moderation(commands.Cog):
         log_matches = {r[1] for r in log_data if r[4] and (r[4] == photo_hash or utils.hamming_distance(r[4], photo_hash) < 5)}
         matches = [m for m in ctx.guild.members if m.id in log_matches]
 
-        embed = discord.Embed(title="Success!", description=f"**{len(matches)}** members with identical profile photos found!\n\nTo ban all detected members & blacklist this "
-                                                            f"photo, click the ✅\nClick the ❌ to ignore this result.", color=discord.Color.green())
+        embed = discord.Embed(title="Success!", description=f"**{len(matches)}** members with identical profile photos found!\n\nTo ban all detected members & __blacklist this "
+                                                            f"photo__,\nClick the ✅ to confirm.\nClick the ❌ to ignore this result.", color=discord.Color.green())
         embed.add_field(name="Photo Hash:", value=photo_hash)
         embed.set_thumbnail(url=user.avatar_url)
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()
         msg = await ctx.send(embed=embed)
-        await ctx.send(f"Example Detections ({'20' if len(matches) > 20 else len(matches)}/{len(matches)}):\n{''.join([m.mention for m in matches[:20]])}")
+        if len(matches) > 0:
+            await ctx.send(f"Example Detections ({'20' if len(matches) > 20 else len(matches)}/{len(matches)}):\n{''.join([m.mention for m in matches[:20]])}")
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
 
@@ -634,10 +657,19 @@ class Moderation(commands.Cog):
     @checks.is_staff_check()
     @commands.max_concurrency(1, per=discord.ext.commands.BucketType.guild)
     async def syncphotohashes(self, ctx):
-        # log_data = await sql.get_all_logs(self.client.pool)
-        # await ctx.send(log_data[0])
-
         await self.sync_photo_hashes(ctx.guild, ctx.channel)
+
+    @commands.command(usage="creationdate <user>")
+    async def creationdate(self, ctx, user:discord.User):
+        elapsed_seconds = (datetime.datetime.utcnow()-user.created_at).total_seconds()
+
+        embed = discord.Embed(description=f"Time since creation: {utils.duration_formatter(elapsed_seconds)}\n\n"
+                                          f"Created:{user.created_at.strftime('%b %d %Y %H:%M:%S %p')}", color=discord.Color.green())
+        embed.set_author(name=user.name, icon_url=user.avatar_url)
+        embed.set_thumbnail(url=user.avatar_url)
+        embed.set_footer(text="©Cryptographer")
+        embed.timestamp = datetime.datetime.utcnow()
+        await ctx.send(embed=embed)
 
     # @commands.command(usage='pban <user> <reason>')
     # @commands.is_owner()

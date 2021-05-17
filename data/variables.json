@@ -1,20 +1,41 @@
 {
+    "-1": {
+        "maintenance_mode": false,
+        "captcha_status": false,
+        "duplicate_status": false,
+        "min_account_age_seconds": -1,
+        "bot_channel_only": [""],
+        "roles": {
+            "verified_role": null,
+            "temporary_role": null,
+            "min_staff_role": null
+        },
+        "channels": {
+            "file_storage": null,
+            "log_channel": null,
+            "captcha_channel": null,
+            "spam_reports": null,
+            "duplicate_reports": null,
+            "bots_channel": null
+        }
+    },
     "390628544369393664": {
         "maintenance_mode": false,
         "captcha_status": false,
         "duplicate_status": true,
         "min_account_age_seconds": -1,
-        "bot_channel_only": ["greed", "stats", "hangman", "connect4", "highlow", "tictactoe", "minesweeper", "rps"],
+        "bot_channel_only": ["greed", "hangman", "connect4", "highlow", "tictactoe", "minesweeper", "rps"],
         "roles": {
             "verified_role": 608524630113779722,
             "temporary_role": 679606142678073355,
             "min_staff_role": 390644277560082435
         },
         "channels": {
-            "log_channel": 838968272510648390,
+            "file_storage": 838968272510648390,
+            "log_channel": 842295312168910869,
             "captcha_channel": 483475440686858250,
             "spam_reports": 806958515267960924,
-            "duplicate_reports": 826282773823225916,
+            "duplicate_reports": 806958515267960924,
             "bots_channel": 780208685229801502
         }
     },
@@ -30,6 +51,7 @@
             "min_staff_role": 801856831466242138
         },
         "channels": {
+            "file_storage": 801858500447305748,
             "log_channel": 801858500447305748,
             "captcha_channel": 801858544915447818,
             "spam_reports": 801858500447305748,

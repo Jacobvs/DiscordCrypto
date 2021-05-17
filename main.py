@@ -95,7 +95,8 @@ async def on_ready():
 
     update_msg_counts.start()
 
-    bot.wordlist = set(line.strip() for line in open('data/wordlist.txt'))
+    bot.adjective_list = set(line.strip() for line in open('data/english-adjectives.txt'))
+    bot.noun_list = set(line.strip() for line in open('data/english-nouns.txt'))
 
     with open('data/banned_names.json') as f:
         bot.banned_names = json.load(f)
