@@ -650,6 +650,12 @@ class Duration(Converter):
         return now + delta
 
 
+def seconds_formatter(total_seconds):
+    days, rem = divmod(total_seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    return days, hours, minutes, seconds
+
 def duration_formatter(tsecs, ptype=None):
     days, remainder = divmod(tsecs, 86400)
     hours, remainder = divmod(remainder, 3600)

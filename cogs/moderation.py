@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import difflib
 import json
-import logging as logger
+import logging
 import textwrap
 from collections import Counter
 
@@ -16,7 +16,7 @@ import sql
 import utils
 
 
-logger = logger.getLogger('discord')
+logger = logging.getLogger('discord')
 
 
 class Moderation(commands.Cog):
@@ -24,11 +24,6 @@ class Moderation(commands.Cog):
 
     def __init__(self, client):
         self.client = client
-
-
-    # @commands.command(usage='manualverify <member>', description='Manually verify a user in the server')
-    # @commands.guild_only()
-    # @checks.is_staff_check()
 
     @commands.command(usage='listall <role>', description="List all members with a role")
     @commands.guild_only()
@@ -132,45 +127,45 @@ class Moderation(commands.Cog):
                                   color=discord.Color.green())
         return await ctx.send(embed=embed)
 
-    @commands.command(usage='addalt <member> <altname>', description="Add an alternate account to a user (limit 2).")
-    @commands.guild_only()
-    @checks.is_staff_check()
-    async def addalt(self, ctx, member: utils.MemberLookupConverter, altname):
-
-        name = member.display_name
-
-        name += f" | {altname}"
-        try:
-            await member.edit(nick=name)
-        except discord.Forbidden:
-            return await ctx.send("There was an error adding the alt to this person's name (Perms).\n"
-                                  f"Please copy this and set their nickname manually: `{name}`\n{member.mention}")
-
-        embed = discord.Embed(title="Success!", description=f"`{altname}` was added as an alt to {member.mention}.",
-                              color=discord.Color.green())
-        await ctx.send(embed=embed)
-
-    @commands.command(usage='removealt <member> <altname>', description="Remove an alt from a player.")
-    @commands.guild_only()
-    @checks.is_staff_check()
-    async def removealt(self, ctx, member: utils.MemberLookupConverter, altname):
-        clean_names = []
-        if altname.lower() in member.display_name.lower():
-            names = member.display_name.split(" | ")
-            for n in names:
-                if n.lower() != altname.lower():
-                    clean_names.append(n)
-        nname = " | ".join(clean_names)
-
-        try:
-            await member.edit(nick=nname)
-        except discord.Forbidden:
-            return await ctx.send("There was an error adding the alt to this person's name (Perms).\n"
-                                  f"Please copy this and replace their nickname manually: ` | {nname}`\n{member.mention}")
-
-        embed = discord.Embed(title="Success!", description=f"`{altname}` was removed as an alt to {member.mention}.",
-                              color=discord.Color.green())
-        await ctx.send(embed=embed)
+    # @commands.command(usage='addalt <member> <altname>', description="Add an alternate account to a user (limit 2).")
+    # @commands.guild_only()
+    # @checks.is_staff_check()
+    # async def addalt(self, ctx, member: utils.MemberLookupConverter, altname):
+    #
+    #     name = member.display_name
+    #
+    #     name += f" | {altname}"
+    #     try:
+    #         await member.edit(nick=name)
+    #     except discord.Forbidden:
+    #         return await ctx.send("There was an error adding the alt to this person's name (Perms).\n"
+    #                               f"Please copy this and set their nickname manually: `{name}`\n{member.mention}")
+    #
+    #     embed = discord.Embed(title="Success!", description=f"`{altname}` was added as an alt to {member.mention}.",
+    #                           color=discord.Color.green())
+    #     await ctx.send(embed=embed)
+    #
+    # @commands.command(usage='removealt <member> <altname>', description="Remove an alt from a player.")
+    # @commands.guild_only()
+    # @checks.is_staff_check()
+    # async def removealt(self, ctx, member: utils.MemberLookupConverter, altname):
+    #     clean_names = []
+    #     if altname.lower() in member.display_name.lower():
+    #         names = member.display_name.split(" | ")
+    #         for n in names:
+    #             if n.lower() != altname.lower():
+    #                 clean_names.append(n)
+    #     nname = " | ".join(clean_names)
+    #
+    #     try:
+    #         await member.edit(nick=nname)
+    #     except discord.Forbidden:
+    #         return await ctx.send("There was an error adding the alt to this person's name (Perms).\n"
+    #                               f"Please copy this and replace their nickname manually: ` | {nname}`\n{member.mention}")
+    #
+    #     embed = discord.Embed(title="Success!", description=f"`{altname}` was removed as an alt to {member.mention}.",
+    #                           color=discord.Color.green())
+    #     await ctx.send(embed=embed)
 
     @commands.command(usage="purge <num> [filter_type: all / contains / from] [filter: 'word' / 'sentence or words' / @member]",
                       description="Removes [num] messages from the channel\nTo delete all messages do: `purge <num> all`\nTo delete messages containing words or a sentence do: "
@@ -229,7 +224,7 @@ class Moderation(commands.Cog):
     @commands.command(usage='findduplicates [num_repeats]', description="Find accounts that have duplicate names in the server over specified threshold.")
     @commands.guild_only()
     @checks.is_staff_check()
-    async def findduplicates(self, ctx, num: int):
+    async def findduplicates(self, ctx, num: int = 5):
         if num < 4:
             return await ctx.send("Please specify a number higher than 3!")
 
@@ -328,6 +323,30 @@ class Moderation(commands.Cog):
         #
         # await main.cleanup()
 
+    @commands.command(usage="cleanreports", description="Clean up spam reports channel, moving resolved cases to log channel")
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def cleanreports(self, ctx):
+        reports_channel = self.client.variables[ctx.guild.id]['spam_reports']
+        if not reports_channel:
+            return await ctx.send("Error! No configured spam reports channel!")
+
+        log_channel = self.client.variables[ctx.guild.id]['log_channel']
+
+        async for message in reports_channel.history():
+            if message.author == self.client.user:
+                if message.embeds:
+                    embed = message.embeds[0]
+                    if "Resolved" in embed.title:
+                        try:
+                            await log_channel.send(embed=embed)
+                            await message.delete()
+                        except discord.DiscordException:
+                            pass
+
+        await ctx.send("Success! Messages were successfully cleaned from the reports-channel.")
+
+
     @commands.command(usage="findwordlist [suppress_embeds?: true/false]", description="Find members matching wordlist naming pattern")
     @commands.guild_only()
     @checks.is_staff_check()
@@ -335,17 +354,34 @@ class Moderation(commands.Cog):
         mems = []
         new_mems = []
         for m in ctx.guild.members:
-            if m.name.istitle():
-                words = m.name.lower().split()
-                if words[0] in self.client.adjective_list or (len(words) == 2 and words[1] in self.client.noun_list):
-                    hours, rem = divmod((datetime.datetime.utcnow() - m.created_at).total_seconds(), 3600)
-                    if hours < 12:
-                        new_mems.append(m)
-                    else:
+            # if m.name.istitle():
+            #     words = m.name.lower().split()
+            #     if words[0] in self.client.adjective_list or (len(words) == 2 and words[1] in self.client.noun_list):
+            #         hours, rem = divmod((datetime.datetime.utcnow() - m.created_at).total_seconds(), 3600)
+            #         if hours < 12:
+            #             new_mems.append(m)
+            #         else:
+            #             mems.append(m)
+            if m.name[-1].isdigit():
+                words = m.name[:-1]
+                index = None
+
+                for i, c in enumerate(words):
+                    if c.isupper():
+                        if index is not None:
+                            index = None
+                            break
+                        index = i
+
+                if index:
+                    first_word = words[:index]
+                    second_word = words[index:].lower()
+
+                    if first_word in self.client.adjective_list and second_word in self.client.noun_list:
                         mems.append(m)
 
         msg_data = await sql.get_all_logs(self.client.pool)
-        msg_data = {r[1]: r[2] for r in msg_data if r[0] == ctx.guild.id}
+        msg_data = {r[sql.log_cols.uid]: r[sql.log_cols.msg_count] for r in msg_data if r[sql.log_cols.gid] == ctx.guild.id}
         no_messages = [m for m in mems if msg_data.get(m.id, 0) == 0]
         no_messages_12 = [m for m in new_mems if msg_data.get(m.id, 0) == 0]
         one_message = [m for m in mems if msg_data.get(m.id, 0) == 1]
@@ -393,16 +429,23 @@ class Moderation(commands.Cog):
                        f"\n\n**{len(default_0)}** members with no messages & default pfp\n**{len(default_1)}** members with 1 message & default pfp"
                        f"\n**{len(new_mems)}** members with account creation newer than 12 hours")
 
-        embed = discord.Embed(title="Actions:", description="1️⃣ - to kick all accounts with 0 messages.\n2️⃣ - to kick all accounts with 0 messages & default pfp"
-                                                            "\n3️⃣ - to kick all accounts <12 hours old.\n❌ - to take no actions", color=discord.Color.orange())
+        embed = discord.Embed(title="Actions:", description="1️⃣ - to KICK all accounts with 0 messages.\n2️⃣ - to KICK all accounts with 0 messages & default pfp"
+                                                            "\n3️⃣ - to KICK all accounts <12 hours old.\n4️⃣ - to BAN all accounts with 0 messages.\n5️⃣- to BAN all accounts "
+                                                            "with 0 messages & default pfp\n\n❌ - to take no "
+                                                            "actions",
+                              color=discord.Color.orange())
         msg = await ctx.send(embed=embed)
         await msg.add_reaction("1️⃣")
         await msg.add_reaction("2️⃣")
         await msg.add_reaction("3️⃣")
+        await msg.add_reaction("4️⃣")
+        await msg.add_reaction("5️⃣")
         await msg.add_reaction("❌")
 
+        should_ban = False
+
         def check(payload):
-            return payload.user_id == ctx.author.id and payload.message_id == msg.id and str(payload.emoji) in ["1️⃣", "2️⃣", "3️⃣", "❌"]
+            return payload.user_id == ctx.author.id and payload.message_id == msg.id and str(payload.emoji) in ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "❌"]
 
         try:
             payload = await self.client.wait_for('raw_reaction_add', timeout=10800, check=check)  # Wait 1 hr max
@@ -419,11 +462,17 @@ class Moderation(commands.Cog):
             kicklist = default_0
         elif str(payload.emoji) == "3️⃣":
             kicklist = new_mems
+        elif str(payload.emoji) == "4️⃣":
+            kicklist = no_messages
+            should_ban = True
+        elif str(payload.emoji) == "5️⃣":
+            kicklist = default_0
+            should_ban = True
         else:
             return await msg.delete()
 
-        embed.title = f"Kicking... (0/{len(kicklist)})"
-        embed.description = "Kicking members "
+        embed.title = f"{'Banning' if should_ban else 'Kicking'}... (0/{len(kicklist)})"
+        embed.description = f"{'Banning' if should_ban else 'Kicking'} members "
         embed.description += "with 0 messages and default profile photos." if str(payload.emoji) in ["1️⃣", "2️⃣"] else "with an account creation date <12 hours old."
         embed.description += "\nPlease wait... This can take a few minutes to complete."
         embed.colour = discord.Color.gold()
@@ -431,12 +480,16 @@ class Moderation(commands.Cog):
         # kick members here
         for i, m in enumerate(kicklist, start=1):
             if i % 100 == 0:
-                embed.title = f"Kicking... ({i}/{len(kicklist)})"
+                embed.title = f"{'Banning' if should_ban else 'Kicking'}... ({i}/{len(kicklist)})"
                 await msg.edit(embed=embed)
-            await m.kick(reason=f"Name matching wordlist & {'account creation <12h' if str(payload.emoji) == '3️⃣' else 'no messages sent'} (Suspected Bot)")
+            if should_ban:
+                await m.ban(reason=f"Name matching wordlist & {'account creation <12h' if str(payload.emoji) == '3️⃣' else 'no messages sent'} (Suspected Bot)")
+            else:
+                await m.kick(reason=f"Name matching wordlist & {'account creation <12h' if str(payload.emoji) == '3️⃣' else 'no messages sent'} (Suspected Bot)")
 
         embed.title = "Success!"
-        embed.description = f"__**{len(kicklist)}** members successfully kicked!__\n\nRequested by: {ctx.author.mention} ({ctx.author.display_name}#{ctx.author.discriminator})"
+        embed.description = f"__**{len(kicklist)}** members successfully {'banned' if should_ban else 'kicked'}!__\n\nRequested by: {ctx.author.mention} " \
+                            f"({ctx.author.display_name}#{ctx.author.discriminator})"
         embed.colour = discord.Color.green()
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()

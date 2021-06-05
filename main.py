@@ -81,10 +81,10 @@ async def on_ready():
 
     data = await sql.get_all_logs(bot.pool)
     for record in data:
-        if record[2] > 0:
-            bot.spoken.get(record[0], set()).add(record[1])
-        if record[5]:
-            bot.banned_photos.add((record[0], record[4]))
+        if record[sql.log_cols.msg_count] > 0:
+            bot.spoken.get(record[sql.log_cols.gid], set()).add(record[sql.log_cols.uid])
+        if record[sql.log_cols.banned_photo]:
+            bot.banned_photos.add((record[sql.log_cols.gid], record[sql.log_cols.photo_hash]))
 
 
     await cleanup()
