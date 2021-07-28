@@ -2,19 +2,11 @@ import asyncio
 import datetime
 import difflib
 import functools
-import io
-import os
 import re
 import shutil
-import string
-import random
 from autocorrect import Speller
-
-import Augmentor
 import aiohttp
 import discord
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 from discord.ext import commands
 from unidecode import unidecode
 
@@ -29,33 +21,33 @@ class Events(commands.Cog):
     def __init__(self, client):
         self.client = client
 
-    @commands.command(usage="testcaptcha", description="Generate a Test Captcha")
-    @commands.is_owner()
-    async def testcaptcha(self, ctx):
-        file, text, folder_path = await self.client.loop.run_in_executor(None, functools.partial(create_captcha, ctx.author))
-
-        captcha_msg = await ctx.send(
-            f"{ctx.author.mention} - Please solve the captcha below to gain access to the server! (6 uppercase letters).",
-            file=file)
-        # Remove captcha folder
-        try:
-            shutil.rmtree(folder_path)
-        except Exception as error:
-            pass
-
-        # Check if it is the right user
-        def check(message):
-            if message.author == ctx.author and message.content != "":
-                return message.content
-
-        msg = await self.client.wait_for('message', timeout=120.0, check=check)
-        # Check the captcha
-        password = text.split(" ")
-        password = "".join(password)
-        if msg.content.upper() == password:
-            await ctx.send("Correct Solution!")
-        else:
-            await ctx.send(f"Incorrect Solution! Answer: {password}")
+    # @commands.command(usage="testcaptcha", description="Generate a Test Captcha")
+    # @commands.is_owner()
+    # async def testcaptcha(self, ctx):
+    #     file, text, folder_path = await self.client.loop.run_in_executor(None, functools.partial(create_captcha, ctx.author))
+    #
+    #     captcha_msg = await ctx.send(
+    #         f"{ctx.author.mention} - Please solve the captcha below to gain access to the server! (6 uppercase letters).",
+    #         file=file)
+    #     # Remove captcha folder
+    #     try:
+    #         shutil.rmtree(folder_path)
+    #     except Exception as error:
+    #         pass
+    #
+    #     # Check if it is the right user
+    #     def check(message):
+    #         if message.author == ctx.author and message.content != "":
+    #             return message.content
+    #
+    #     msg = await self.client.wait_for('message', timeout=120.0, check=check)
+    #     # Check the captcha
+    #     password = text.split(" ")
+    #     password = "".join(password)
+    #     if msg.content.upper() == password:
+    #         await ctx.send("Correct Solution!")
+    #     else:
+    #         await ctx.send(f"Incorrect Solution! Answer: {password}")
 
     @commands.Cog.listener()
     async def on_message(self, msg: discord.Message):
@@ -252,8 +244,8 @@ class Events(commands.Cog):
                                               f"below:",
                                   color=discord.Color.teal(), url=msg.jump_url)
             if member:
-                embed.set_author(name=member.display_name + " <-- NAME (VERIFY MATCH!) PHOTO -->", icon_url=member.avatar_url)
-                embed.set_thumbnail(url=member.avatar_url)
+                embed.set_author(name=member.display_name + " <-- NAME (VERIFY MATCH!) PHOTO -->", icon_url=member.avatar)
+                embed.set_thumbnail(url=member.avatar)
             embed.set_image(url=img.url)
             footer = 'Click ✅ to ban user, ❌ to ignore.' if member else 'Click 📝 or ❌ to resolve this message.'
             embed.set_footer(text=footer + " | Detected")
@@ -370,8 +362,8 @@ class Events(commands.Cog):
                                         embd = discord.Embed(description=f"{m.mention} ({m.name}#{m.discriminator})\n# Sent Messages: **__{message_count}__**\n\n"
                                                                          f"If this is the correct member, press the ✅ reaction below.\nIf not, use the arrows to browse "
                                                                          f"other members with similar names.\n\nIf no members are correct, use the ❌.", color=discord.Color.blue())
-                                        embd.set_author(name=m.display_name, icon_url=m.avatar_url)
-                                        embd.set_thumbnail(url=m.avatar_url)
+                                        embd.set_author(name=m.display_name, icon_url=m.avatar)
+                                        embd.set_thumbnail(url=m.avatar)
                                         embd.set_footer(text=f"Match {i}/{len(mems)}")
                                         embeds.append(embd)
 
@@ -410,7 +402,7 @@ class Events(commands.Cog):
                                     ban_embed = discord.Embed(description=f"{member.mention} ({member.name}#{member.discriminator}) was banned for "
                                                                           f"{'spamming' if is_spam else 'duplicate name'}.",
                                                               color=discord.Color.gold())
-                                    ban_embed.set_author(name='Member Banned', icon_url=member.avatar_url)
+                                    ban_embed.set_author(name='Member Banned', icon_url=member.avatar)
                                     ban_embed.set_footer(text=f'ID: {member.id}')
                                     submission_channel = self.client.get_channel(int(embed.url.split('channels/')[1].split("/")[1]))
                                     author_mention = '<@' + embed.description.split('<@')[1].split('>')[0] + '>'
@@ -454,7 +446,7 @@ class Events(commands.Cog):
                                         ban_embed = discord.Embed(description=f"{member.mention} ({member.name}#{member.discriminator}) was banned for "
                                                                               f"{'spamming' if is_spam else 'duplicate name'}.",
                                                                   color=discord.Color.gold())
-                                        ban_embed.set_author(name='Member Banned', icon_url=member.avatar_url)
+                                        ban_embed.set_author(name='Member Banned', icon_url=member.avatar)
                                         ban_embed.set_footer(text=f'ID: {member.id}')
                                         submission_channel = self.client.get_channel(int(embed.url.split('channels/')[1].split("/")[1]))
                                         author_mention = '<@' + embed.description.split('<@')[1].split('>')[0] + '>'

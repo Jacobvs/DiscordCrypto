@@ -12,7 +12,7 @@ import utils
 class Tools(commands.Cog):
 
     def __init__(self, client):
-        self.client = client
+        self.client: discord.Client = client
 
     @commands.command(usage='convert <amount> <currency_code> to <currency_code>', description="Convert a currency into another\nEx: `convert 10 USD to EUR`")
     @commands.cooldown(1, 5, discord.ext.commands.BucketType.member)
@@ -86,7 +86,7 @@ class Tools(commands.Cog):
 
         name = reminders[str(ctx.guild.id)]['name']
         photo = reminders[str(ctx.guild.id)]['photo']
-        data = (duration.timestamp(), ctx.message.reference.jump_url, resolved.author.name, str(resolved.author.avatar_url), content)
+        data = (duration.timestamp(), ctx.message.reference.jump_url, resolved.author.name, str(resolved.author.avatar), content)
 
         if str(ctx.author.id) in reminders[str(ctx.guild.id)] and reminders[str(ctx.guild.id)][str(ctx.author.id)] is not None:
             if len(reminders[str(ctx.guild.id)][str(ctx.author.id)]) > 9:
@@ -115,7 +115,7 @@ class Tools(commands.Cog):
             return
 
         await ctx.message.add_reaction("✅")
-        await reminder(ctx.author, ctx.guild.id, name, photo, total_seconds, ctx.message.reference.jump_url, resolved.author.name, resolved.author.avatar_url, content)
+        await reminder(ctx.author, ctx.guild.id, name, photo, total_seconds, ctx.message.reference.jump_url, resolved.author.name, resolved.author.avatar, content)
 
     @commands.command(usage='greed', description="Retrieve the current Crypto Fear & Greed Index", aliases=['fear', 'fng'])
     @commands.cooldown(1, 5, discord.ext.commands.BucketType.member)
@@ -176,7 +176,7 @@ class Tools(commands.Cog):
         kicked = len([e for e in entries if e.action == discord.AuditLogAction.kick])
         banned = len([e for e in entries if e.action == discord.AuditLogAction.ban])
         embed.description = f"__Moderation Action Stats:__\n**{banned}** members banned for scamming!\n**{kicked}** detected bot accounts kicked from the server!"
-        embed.set_thumbnail(url=ctx.guild.icon_url)
+        embed.set_thumbnail(url=ctx.guild.icon)
         embed.add_field(name="Bot latency:", value=f"**`{round(self.client.latency * 1000, 2)}`** Milliseconds.")
         mcount = 0
         for g in self.client.guilds:

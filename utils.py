@@ -4,6 +4,7 @@ import difflib
 import math
 import re
 import time
+from contextlib import asynccontextmanager
 from enum import Enum
 import random
 from typing import Union
@@ -11,7 +12,7 @@ from typing import Union
 import aiohttp
 import discord
 import numpy as np
-from async_generator import asynccontextmanager
+# from async_generator import asynccontextmanager
 from discord.embeds import _EmptyEmbed
 from discord.ext.commands import BadArgument, Converter
 

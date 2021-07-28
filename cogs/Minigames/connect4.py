@@ -173,7 +173,7 @@ class Connect4:
         next to play.
         """
         self.embed.set_author(name=self.players[player].display_name,
-            icon_url=self.players[player].avatar_url_as(static_format='png'), ).set_field_at(index=0,  # graphics
+            icon_url=self.players[player].avatar, ).set_field_at(index=0,  # graphics
             name=self.embed.fields[0].name, value=self.make_graphics(), ).set_footer(text=hint_message, )
 
 

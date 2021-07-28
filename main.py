@@ -1,8 +1,11 @@
+import asyncio
 import json
+from typing import Dict, Set, Union, List
 
 import aiomysql
 import discord
 import logging
+
 import urllib3
 import os
 
@@ -11,7 +14,6 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 import sql
-from cogs import events
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
@@ -21,13 +23,15 @@ logger.addHandler(handler)
 urllib3.disable_warnings()
 
 load_dotenv()
+
+intents = discord.Intents.default()
+intents.members = True
+intents.typing = False
+intents.presences = False
+
 token = os.getenv('DISCORD_TOKEN')
-ocr_token = os.getenv('OCR_TOKEN')
-cmc_token = os.getenv('CMC_TOKEN')
-imagekit_token = os.getenv('IMAGEKIT_TOKEN')
 
 
-# noinspection PyUnusedLocal
 def get_prefix(client, message):
     """Returns the prefix for the specified server"""
     if message.guild is None:
@@ -38,144 +42,159 @@ def get_prefix(client, message):
 
     return prefixes[str(message.guild.id)]
 
+class CryptoBot(commands.Bot):
+    
+    def __init__(self):
+        super().__init__(command_prefix=get_prefix, intents=intents)
+        self.OCR_TOKEN = os.getenv('OCR_TOKEN')
+        self.CMC_TOKEN = os.getenv('CMC_TOKEN')
+        self.IMAGEKIT_TOKEN = os.getenv('IMAGEKIT_TOKEN')
+        self.owner_id = 196282885601361920
 
-intents = discord.Intents.default()
-intents.members = True
-intents.typing = False
-intents.presences = False
+        self.remove_command("help")
 
-bot = commands.Bot(command_prefix=get_prefix, intents=intents)
-bot.remove_command('help')
-bot.owner_id = 196282885601361920
-bot.OCR_TOKEN = ocr_token
-bot.CMC_TOKEN = cmc_token
-bot.IMAGEKIT_TOKEN = imagekit_token
-bot.variables = {}
-bot.spoken = {}
-bot.soft_muted = set([])
-bot.sent_messages = {}
-bot.banned_photos = set([])
+        self.start_time: datetime = None
+        self.pool: aiomysql.pool = None
+        self.variables: Dict[int: Dict[str: Union[bool, int, List[str], Dict[str, discord.Role], Dict[str, discord.TextChannel]]]] = {}
+        self.spoken = {}
+        self.soft_muted = set([])
+        self.sent_messages = {}
+        self.banned_photos = set([])
+        self.persistent_views_added = False
+        self.pending_verification: Set[int] = set([])
+        self.adjective_list: Set[str] = set(line.strip() for line in open('data/english-adjectives.txt'))
+        self.noun_list: Set[str] = set(line.strip() for line in open('data/english-nouns.txt'))
 
-with open('data/variables.json', 'r') as file:
-    bot.maintenance_mode = json.load(file).get("maintenance_mode")
+        with open('data/banned_names.json') as f:
+            self.banned_names: dict = json.load(f)
 
-for filename in os.listdir('./cogs/'):
-    if filename.endswith('.py'):
-        bot.load_extension(f'cogs.{filename[:-3]}')
+        self.warning_embed = discord.Embed(title="⚠️ Warning!", color=discord.Color.orange())
+        self.error_embed = discord.Embed(title="❌ ERROR!", color=discord.Color.red())
 
+        with open('data/variables.json', 'r') as file:
+            self.maintenance_mode = json.load(file).get("maintenance_mode")
 
-@bot.event
-async def on_ready():
-    """Wait until bot has connected to discord"""
-    print("Connected to discord")
-    bot.start_time = datetime.datetime.now()
-    bot.pool = await aiomysql.create_pool(host=os.getenv("MYSQL_HOST"), port=3306, user='jacobvs', password=os.getenv("MYSQL_PASSWORD"),
-                                          db='mysql', loop=bot.loop, connect_timeout=60)
-    print("Connected to DB")
+        for filename in os.listdir('./cogs/'):
+            if filename.endswith('.py'):
+                self.load_extension(f'cogs.{filename[:-3]}')
 
-    # Cache variables in memory & convert ID's to objects
-    build_guild_db()
+    async def on_ready(self):
+        """Wait until bot has connected to discord"""
+        print("Connected to discord")
+        self.start_time = datetime.datetime.now()
+        self.pool = await aiomysql.create_pool(host=os.getenv("MYSQL_HOST"), port=3306, user='jacobvs', password=os.getenv("MYSQL_PASSWORD"),
+                                              db='mysql', loop=bot.loop, connect_timeout=60)
+        print("Connected to DB")
 
-    for g in bot.guilds:
-        bot.spoken[g.id] = set()
+        # Cache variables in memory & convert ID's to objects
+        self.build_guild_db()
 
-    data = await sql.get_all_logs(bot.pool)
-    for record in data:
-        if record[sql.log_cols.msg_count] > 0:
-            bot.spoken.get(record[sql.log_cols.gid], set()).add(record[sql.log_cols.uid])
-        if record[sql.log_cols.banned_photo]:
-            bot.banned_photos.add((record[sql.log_cols.gid], record[sql.log_cols.photo_hash]))
+        if not bot.persistent_views_added:
+            # Register the persistent view for listening here.
+            # Note that this does not send the view to any message.
+            # In order to do this you need to first send a message with the View, which is shown below.
+            # If you have the message_id you can also pass it as a keyword argument, but for this example
+            # we don't have one.
+            from views.verify import VerifyView
+            self.add_view(VerifyView(bot))
+            self.persistent_views_added = True
 
+        for g in bot.guilds:
+            self.spoken[g.id] = set()
 
-    await cleanup()
+        data = await sql.get_all_logs(bot.pool)
+        for record in data:
+            if record[sql.log_cols.msg_count] > 0:
+                self.spoken.get(record[sql.log_cols.gid], set()).add(record[sql.log_cols.uid])
+            if record[sql.log_cols.banned_photo]:
+                self.banned_photos.add((record[sql.log_cols.gid], record[sql.log_cols.photo_hash]))
 
-    bot.warning_embed = discord.Embed(title="⚠️ Warning!", color=discord.Color.orange())
-    bot.error_embed = discord.Embed(title="❌ ERROR!", color=discord.Color.red())
-
-
-    update_msg_counts.start()
-
-    bot.adjective_list = set(line.strip() for line in open('data/english-adjectives.txt'))
-    bot.noun_list = set(line.strip() for line in open('data/english-nouns.txt'))
-
-    with open('data/banned_names.json') as f:
-        bot.banned_names = json.load(f)
-
-    # Set Presence to reflect bot status
-    if bot.maintenance_mode:
-        await bot.change_presence(status=discord.Status.idle, activity=discord.Game("IN MAINTENANCE MODE!"))
-    else:
-        await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"!help"))
-
-    with open('data/reminders.json') as f:
-        reminders = json.load(f)
-        for gid in reminders:
-            name = reminders[gid]['name']
-            photo = reminders[gid]['photo']
-            for uid in reminders[gid]:
-                if uid.isdigit():
-                    user = bot.get_user(int(uid))
-                    if user:
-                        for r in reminders[gid][uid]:
-                            from cogs import tools
-                            total_seconds = (datetime.datetime.utcfromtimestamp(int(r[0])) - datetime.datetime.utcnow()).total_seconds()
-                            bot.loop.create_task(tools.reminder(user, gid, name, photo, total_seconds, r[1], r[2], r[3], r[4]))
-
-    print(f'{bot.user.name} is now online!')
-
-
-def build_guild_db():
-    with open("data/variables.json", "r") as f:
-        data = json.load(f)
-
-    for g in data:
         try:
-            guild = bot.get_guild(int(g))
-            if guild is None:
+            await self.cleanup()
+        except BaseException:
+            pass
+
+        update_msg_counts.start()
+
+
+        # Set Presence to reflect bot status
+        if self.maintenance_mode:
+            await self.change_presence(status=discord.Status.idle, activity=discord.Game("IN MAINTENANCE MODE!"))
+        else:
+            await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"!help"))
+
+        with open('data/reminders.json') as f:
+            reminders = json.load(f)
+            for gid in reminders:
+                name = reminders[gid]['name']
+                photo = reminders[gid]['photo']
+                for uid in reminders[gid]:
+                    if uid.isdigit():
+                        user = self.get_user(int(uid))
+                        if user:
+                            for r in reminders[gid][uid]:
+                                from cogs import tools
+                                total_seconds = (datetime.datetime.utcfromtimestamp(int(r[0])) - datetime.datetime.utcnow()).total_seconds()
+                                self.loop.create_task(tools.reminder(user, gid, name, photo, total_seconds, r[1], r[2], r[3], r[4]))
+
+        print(f'{bot.user.name} is now online!')
+
+    def build_guild_db(self):
+        with open("data/variables.json", "r") as f:
+            data = json.load(f)
+
+        for g in data:
+            try:
+                guild = self.get_guild(int(g))
+                if guild is None:
+                    continue
+            except ValueError:
                 continue
-        except ValueError:
-            continue
 
-        variables = {}
-        for record in data[g]:
-            if record == 'roles':
-                for obj in data[g][record]:
-                    try:
-                        _role = guild.get_role(int(data[g][record][obj]))
-                    except ValueError:
-                        _role = None
-                    variables[obj] = _role
-            elif record == 'channels':
-                for obj in data[g][record]:
-                    try:
-                        _channel = guild.get_channel(int(data[g][record][obj]))
-                    except ValueError:
-                        _channel = None
-                    variables[obj] = _channel
-            else:
-                variables[record] = data[g][record]
+            variables = {}
+            for record in data[g]:
+                if record == 'roles':
+                    for obj in data[g][record]:
+                        try:
+                            _role = guild.get_role(int(data[g][record][obj]))
+                        except ValueError:
+                            _role = None
+                        variables[obj] = _role
+                elif record == 'channels':
+                    for obj in data[g][record]:
+                        try:
+                            _channel = guild.get_channel(int(data[g][record][obj]))
+                        except ValueError:
+                            _channel = None
+                        variables[obj] = _channel
+                else:
+                    variables[record] = data[g][record]
 
-        bot.variables[int(g)] = variables
+            self.variables[int(g)] = variables
+
+    async def cleanup(self):
+        for g in self.guilds:
+            if g.id in self.variables:
+                data = self.variables[g.id]
+                # Cleanup captcha channel
+                captcha_channel = data['captcha_channel']
+                no_older_than = datetime.datetime.utcnow() - datetime.timedelta(days=14) + datetime.timedelta(seconds=1)
+
+                def check(msg):
+                    return not msg.pinned
+
+                await captcha_channel.purge(check=check, after=no_older_than, bulk=True)
+
+                from cogs.verification import Verification
+                verify_cog: Verification = self.get_cog("verification")
+                for m in g.members:
+                    if m.top_role == g.default_role:
+                        self.loop.create_task(verify_cog.wait_for_verification(m, data['log_channel']))
 
 
-
-async def cleanup():
-    for g in bot.guilds:
-        if g.id in bot.variables:
-            data = bot.variables[g.id]
-            # Cleanup captcha channel
-            captcha_channel = data['captcha_channel']
-            no_older_than = datetime.datetime.utcnow() - datetime.timedelta(days=14) + datetime.timedelta(seconds=1)
-            def check(msg):
-                return not msg.pinned
-
-            await captcha_channel.purge(check=check, after=no_older_than, bulk=True)
-
-            temprole = data['temporary_role']
-            for m in temprole.members:
-                if m.top_role <= temprole:
-                    bot.loop.create_task(events.Events.on_member_join(events.Events(bot), m))
-
+    
+    
+bot = CryptoBot()
 
 
 @bot.command(usage="load <cog>")
@@ -185,7 +204,6 @@ async def load(ctx, extension):
     extension = extension.lower()
     bot.load_extension(f'cogs.{extension}')
     await ctx.send('{} has been loaded.'.format(extension.capitalize()))
-
 
 
 @bot.command(usage="unload <cog>")
@@ -203,7 +221,7 @@ async def reload(ctx, extension):
     """Reload specified cog"""
     extension = extension.lower()
     if extension == 'guilds':
-        build_guild_db()
+        bot.build_guild_db()
         extension = 'Guild Database'
     else:
         bot.reload_extension(f'cogs.{extension}')

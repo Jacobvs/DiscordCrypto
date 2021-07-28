@@ -1,3 +1,5 @@
+import datetime
+import enum
 import json
 
 import discord
@@ -19,9 +21,7 @@ async def send_log(client, guild, channel, embed, event: str = None, action="Not
 
     if not channel:
 
-
-        channel = client.variables[guild.id]['log_channel'] = channel
-
+        channel = client.variables[guild.id]['log_channel']
         if not channel:
             with open('data/variables.json') as f:
                 data = json.load(f)
@@ -42,3 +42,31 @@ async def send_log(client, guild, channel, embed, event: str = None, action="Not
         await channel.send(content=f"Log for event: {event}, action taken: {action}", embed=embed)
 
     # TODO: Log to console/action file
+
+
+async def action_log(client: discord.Client, member: discord.Member, is_ban: bool, reason: str):
+    embed = discord.Embed(description=f"{member.mention} {member.name}#{member.discriminator}", color=discord.Color.from_rgb(0, 0, 0) if is_ban else discord.Color.red())
+    embed.set_author(name="Banned " if is_ban else "Kicked [" + reason + "]", icon_url=member.avatar)
+    embed.set_thumbnail(url=member.avatar)
+    embed.set_footer(text=f"ID: {member.id}")
+    if not all(ord(char) < 128 for char in member.name):
+        embed.add_field(name="Unicode Name:", value=f"`{member.name}` - decoded: `{member.name.encode('unicode-escape')}`")
+    embed.timestamp = datetime.datetime.utcnow()
+
+    log_channel = client.variables[member.guild.id]['log_channel']
+    await log_channel.send(embed=embed)
+
+
+class VerifyAction(enum.Enum):
+    START_VERIFICATION = ("📥", "Has started the verification process.")
+    TIMEOUT = ("⏰", "Timed out while attempting a captcha.")
+    RETRY = ("🔄", "Entered a wrong solution and is Retrying")
+    COMPLETED = ("✅", "Completed the Verification")
+    FAILED = ("📤", "Failed the captcha 3 times and will be kicked.")
+    EXPIRED = ("❌", "Exceeded the time limit to attempt the captcha and will be kicked.")
+
+
+async def verify_log(client, guild, member, action: VerifyAction):
+    await client.variables[guild.id]['verify_log_channel'].send(f"{action.value[0]}{member.mention}{action.value[1]}")
+
+

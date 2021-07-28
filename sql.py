@@ -40,6 +40,19 @@ async def get_msg_count(pool: aiomysql.Pool, gid, uid):
             else:
                 return data[log_cols.msg_count]
 
+
+async def get_total_msg_count(pool: aiomysql.Pool, uid):
+    """Return user data from rotmg.users table"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(f"SELECT * from crypto.logging WHERE uid = {uid}")
+            data = await cursor.fetchall()
+            if not data:
+                return 0
+            else:
+                return sum(r[log_cols.msg_count] for r in data)
+
+
 async def update_photo_hash(pool: aiomysql.Pool, uid, hash, gid=None, new=True):
     """Update photo hash for a user"""
     async with pool.acquire() as conn:

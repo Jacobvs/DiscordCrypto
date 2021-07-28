@@ -4,7 +4,7 @@ import difflib
 import json
 import logging
 import textwrap
-from collections import Counter
+from collections import Counter, OrderedDict
 
 import aiohttp
 import discord
@@ -126,6 +126,10 @@ class Moderation(commands.Cog):
             embed = discord.Embed(title="Success!", description=f"`{newname}` is now the name of {member.mention}.",
                                   color=discord.Color.green())
         return await ctx.send(embed=embed)
+
+
+    # @commands.command(usage='ban <member>', description="Ban a member from the server")
+
 
     # @commands.command(usage='addalt <member> <altname>', description="Add an alternate account to a user (limit 2).")
     # @commands.guild_only()
@@ -421,8 +425,8 @@ class Moderation(commands.Cog):
 
             await ctx.send(embed=embed)
 
-        default_0 = [m for m in no_messages if m.avatar_url == m.default_avatar_url]
-        default_1 = [m for m in one_message if m.avatar_url == m.default_avatar_url]
+        default_0 = [m for m in no_messages if m.avatar == m.default_avatar]
+        default_1 = [m for m in one_message if m.avatar == m.default_avatar]
 
 
         await ctx.send(f"Wordlist name detection sums:\n**{len(no_messages)}** members with no messages\n**{len(one_message)}** members with 1 message"
@@ -627,7 +631,7 @@ class Moderation(commands.Cog):
     @checks.is_staff_check()
     async def photoblacklist(self, ctx, user: discord.User):
 
-        if user.avatar_url == user.default_avatar_url:
+        if user.avatar == user.default_avatar:
             raise discord.ext.commands.BadArgument(message="Cannot photo-blacklist a user with a default profile photo!")
 
         res = await self.sync_photo_hashes(ctx.guild, ctx.channel)
@@ -652,7 +656,7 @@ class Moderation(commands.Cog):
         embed = discord.Embed(title="Success!", description=f"**{len(matches)}** members with identical profile photos found!\n\nTo ban all detected members & __blacklist this "
                                                             f"photo__,\nClick the ✅ to confirm.\nClick the ❌ to ignore this result.", color=discord.Color.green())
         embed.add_field(name="Photo Hash:", value=photo_hash)
-        embed.set_thumbnail(url=user.avatar_url)
+        embed.set_thumbnail(url=user.avatar)
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()
         msg = await ctx.send(embed=embed)
@@ -686,14 +690,14 @@ class Moderation(commands.Cog):
 
             embed.title = f"Banning Matches... (0/{len(matches)})"
             embed.description = "Please wait... This can take a few minutes to complete."
-            embed.set_thumbnail(url=user.avatar_url)
+            embed.set_thumbnail(url=user.avatar)
             embed.colour = discord.Color.gold()
             await msg.edit(embed=embed)
 
             # kick members here
             for i, m in enumerate(matches, start=1):
                 if i % 10 == 0:
-                    embed.title = f"Kicking... ({i}/{len(matches)})"
+                    embed.title = f"Banning... ({i}/{len(matches)})"
                     await msg.edit(embed=embed)
                 await ctx.guild.ban(m, reason=f"PFP matching blacklisted profile photo.")
 
@@ -718,8 +722,8 @@ class Moderation(commands.Cog):
 
         embed = discord.Embed(description=f"Time since creation: {utils.duration_formatter(elapsed_seconds)}\n\n"
                                           f"Created:{user.created_at.strftime('%b %d %Y %H:%M:%S %p')}", color=discord.Color.green())
-        embed.set_author(name=user.name, icon_url=user.avatar_url)
-        embed.set_thumbnail(url=user.avatar_url)
+        embed.set_author(name=user.name, icon_url=user.avatar)
+        embed.set_thumbnail(url=user.avatar)
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()
         await ctx.send(embed=embed)
@@ -742,6 +746,43 @@ class Moderation(commands.Cog):
     #             await ctx.send(f"Failed to ban in {server.name}")
     #     await ctx.send("Done.")
 
+    @commands.command(usage='photoduplicates', description="Find members with duplicate profile photos.")
+    @commands.guild_only()
+    @checks.is_staff_check()
+    async def photoduplicates(self, ctx):
+        await self.sync_photo_hashes(ctx.guild, ctx.channel)
+
+        data = await sql.get_all_logs(self.client.pool)
+        user_dict = {}
+
+        for r in data:
+            if r[sql.log_cols.gid] == ctx.guild.id:
+                user_dict[r[sql.log_cols.uid]] = (r[sql.log_cols.msg_count], r[sql.log_cols.photo_hash])
+
+        duplicates = {}
+
+        for m in ctx.guild.members:
+            if m.id in user_dict:
+                if user_dict[m.id][1] not in ["red", "orange", "grey", "green", "blurple"]:
+                    lst = duplicates.get(user_dict[m.id][1], None)
+                    if not lst:
+                        lst = [m]
+                    else:
+                        lst.append(m)
+                    duplicates[user_dict[m.id][1]] = lst
+
+        duplicates = dict((k,v) for k,v in duplicates.items() if len(v) > 3)
+
+        duplicates = OrderedDict(sorted(duplicates.items(), key=lambda x: len(x[1]), reverse=True))
+
+
+        output = f"**Duplicate Profile Photo Results:**\n__{len(duplicates)}__ unique profile photos with >3 members\n\n"
+        for k, v in duplicates.items():
+            output += f"**{len(v)}** - {v[0].mention}\n"
+
+        lines = textwrap.wrap(output, width=1024, replace_whitespace=False, break_on_hyphens=False)  # Wrap message before max len of field of 1024
+        for l in lines:
+            await ctx.send(l)
 
 
 def setup(client):

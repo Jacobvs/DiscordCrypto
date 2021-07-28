@@ -16,6 +16,8 @@ class ErrorHandler(commands.Cog):
             return  # Don't interfere with custom error handlers
 
         error = getattr(error, "original", error)  # get original error
+        logging.error("Ignoring exception in command {}:".format(ctx.command))
+        logging.error("\n" + "".join(traceback.format_exception(type(error), error, error.__traceback__)))
 
         if isinstance(error, commands.CommandNotFound):
             await ctx.message.delete()
@@ -78,8 +80,6 @@ class ErrorHandler(commands.Cog):
             return await ctx.send(f"Unhandled error while executing command `{ctx.command.name}`: {str(error)}", delete_after=20)
 
         await ctx.send("An unexpected error occurred while running that command. Please report this by sending a DM to Darkmatter#7321.", delete_after=20)
-        logging.error("Ignoring exception in command {}:".format(ctx.command))
-        logging.error("\n" + "".join(traceback.format_exception(type(error), error, error.__traceback__)))
 
 
 def setup(client):
