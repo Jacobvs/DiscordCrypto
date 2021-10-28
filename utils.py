@@ -345,7 +345,7 @@ async def get_photo_hash(client, member: Union[discord.User, discord.Member]):
     headers = {'Authorization': f'Basic {client.IMAGEKIT_TOKEN}'}
 
     async with aiohttp.ClientSession(headers=headers) as cs:
-        async with cs.get(url=f"{base_url}/{member.id}/{member.avatar}{ext}", headers=headers) as r:
+        async with cs.get(url=f"{base_url}/{member.id}/{member.display_avatar.key}{ext}", headers=headers) as r:
             if r.status == 200:
                 data = await r.json()
                 return data['pHash']

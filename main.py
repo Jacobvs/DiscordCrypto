@@ -1,19 +1,18 @@
-import asyncio
 import json
-from typing import Dict, Set, Union, List
+from typing import Dict, List, Set, Union
 
 import aiomysql
 import discord
 import logging
-
 import urllib3
 import os
-
 import datetime
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-
 import sql
+from cogs.log import verify_log, VerifyAction
+
+load_dotenv()
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
@@ -21,8 +20,6 @@ handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w'
 handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
 urllib3.disable_warnings()
-
-load_dotenv()
 
 intents = discord.Intents.default()
 intents.members = True
@@ -43,15 +40,19 @@ def get_prefix(client, message):
     return prefixes[str(message.guild.id)]
 
 class CryptoBot(commands.Bot):
-    
+
     def __init__(self):
-        super().__init__(command_prefix=get_prefix, intents=intents)
+        super(CryptoBot, self).__init__(command_prefix=get_prefix, intents=intents)
+
+        self.owner_id = 196282885601361920
+        self.remove_command("help")
+
+        for filename in os.listdir('./cogs/'):
+            if filename.endswith('.py'):
+                self.load_extension(f'cogs.{filename[:-3]}')
         self.OCR_TOKEN = os.getenv('OCR_TOKEN')
         self.CMC_TOKEN = os.getenv('CMC_TOKEN')
         self.IMAGEKIT_TOKEN = os.getenv('IMAGEKIT_TOKEN')
-        self.owner_id = 196282885601361920
-
-        self.remove_command("help")
 
         self.start_time: datetime = None
         self.pool: aiomysql.pool = None
@@ -74,16 +75,12 @@ class CryptoBot(commands.Bot):
         with open('data/variables.json', 'r') as file:
             self.maintenance_mode = json.load(file).get("maintenance_mode")
 
-        for filename in os.listdir('./cogs/'):
-            if filename.endswith('.py'):
-                self.load_extension(f'cogs.{filename[:-3]}')
-
     async def on_ready(self):
         """Wait until bot has connected to discord"""
         print("Connected to discord")
         self.start_time = datetime.datetime.now()
         self.pool = await aiomysql.create_pool(host=os.getenv("MYSQL_HOST"), port=3306, user='jacobvs', password=os.getenv("MYSQL_PASSWORD"),
-                                              db='mysql', loop=bot.loop, connect_timeout=60)
+                                               db='mysql', loop=bot.loop, connect_timeout=60)
         print("Connected to DB")
 
         # Cache variables in memory & convert ID's to objects
@@ -95,7 +92,7 @@ class CryptoBot(commands.Bot):
             # In order to do this you need to first send a message with the View, which is shown below.
             # If you have the message_id you can also pass it as a keyword argument, but for this example
             # we don't have one.
-            from views.verify import VerifyView
+            from views.verify_view import VerifyView
             self.add_view(VerifyView(bot))
             self.persistent_views_added = True
 
@@ -116,7 +113,6 @@ class CryptoBot(commands.Bot):
 
         update_msg_counts.start()
 
-
         # Set Presence to reflect bot status
         if self.maintenance_mode:
             await self.change_presence(status=discord.Status.idle, activity=discord.Game("IN MAINTENANCE MODE!"))
@@ -131,7 +127,7 @@ class CryptoBot(commands.Bot):
                 for uid in reminders[gid]:
                     if uid.isdigit():
                         user = self.get_user(int(uid))
-                        if user:
+                        if user and reminders[gid] and reminders[gid][uid]:
                             for r in reminders[gid][uid]:
                                 from cogs import tools
                                 total_seconds = (datetime.datetime.utcfromtimestamp(int(r[0])) - datetime.datetime.utcnow()).total_seconds()
@@ -185,15 +181,24 @@ class CryptoBot(commands.Bot):
 
                 await captcha_channel.purge(check=check, after=no_older_than, bulk=True)
 
-                from cogs.verification import Verification
-                verify_cog: Verification = self.get_cog("verification")
-                for m in g.members:
-                    if m.top_role == g.default_role:
-                        self.loop.create_task(verify_cog.wait_for_verification(m, data['log_channel']))
+        from cogs.verification import Verification
+        verify_cog = Verification(self)
+        num = 0
+
+        for m in self.get_all_members():
+            if not m.bot:
+                temp_role: discord.Role = self.variables[m.guild.id]['temporary_role']
+                if len(m.roles) == 1 and not m.pending:
+                    await verify_log(self, m, VerifyAction.COMPLETE_SCREENING)
+                    await m.add_roles(temp_role)
+
+                if temp_role in m.roles:
+                    num += 1
+                    self.loop.create_task(verify_cog.recheck_verification(m))
+
+        print(f"# Users without roles: {num}")
 
 
-    
-    
 bot = CryptoBot()
 
 
@@ -276,6 +281,7 @@ async def bot_channel(ctx):
             return False
     return True
 
+
 @tasks.loop(minutes=5)
 async def update_msg_counts():
     print(f"Updating message counts! {len(bot.sent_messages)} new changes!")
@@ -288,6 +294,6 @@ async def update_msg_counts():
                 await cursor.executemany(sql, data)
                 await conn.commit()
 
+
 print("Attempting to connect to Discord")
 bot.run(token)
-

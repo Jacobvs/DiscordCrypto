@@ -1,33 +1,31 @@
 import asyncio
 import datetime
-import difflib
-import functools
-import io
+import json
 import logging
-import os
-import random
-import shutil
-import string
+from random import random
+
 import discord
-import numpy as np
 from discord.ext import commands
 from unidecode import unidecode
 
 import sql
 import utils
-from cogs.logging import send_log, action_log, verify_log, VerifyAction
-from views.verify import VerifyView
+from main import CryptoBot
+from cogs.log import send_log, action_log, verify_log, VerifyAction
+from views.verify_view import VerifyView
 
-logger = logging.getLogger('discord')
+log = logging.getLogger('discord')
+default_avatars = {'0': "blurple", '1': "gray", '2': "green", '3': "yellow", '4': "red", '5': "pink"}
 
 
 class Verification(discord.ext.commands.Cog):
 
-    def __init__(self, client):
-        self.client = client
+    def __init__(self, client: CryptoBot):
+        self.client: CryptoBot = client
 
 
     @commands.command(usage="addverimsg", description="Add the verification message")
+    @commands.check_any(commands.is_owner(), commands.has_permissions(manage_guild=True))
     async def addverimsg(self, ctx):
         verified_role = self.client.variables[ctx.guild.id]['verified_role']
 
@@ -35,13 +33,39 @@ class Verification(discord.ext.commands.Cog):
             return await ctx.send("Please configure the verified role before setting up verification!")
 
         embed = discord.Embed(title="Server Verification", description="To prevent bot abuse, new members are required to verify in this server.\n\n"
-                                                                       "__Please complete verification within **5** minutes, or you risk being kicked from the server.__\n\nPress the button below to begin the "
-                                                                       "verification process.", color=discord.Color.gold(), timestamp=discord.utils.utcnow())
-        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon)
-        embed.set_thumbnail(url=self.client.user.avatar)
+                                                                       "__Please complete the verification **promptly**, or you risk being kicked from the server.__\n\nPress the "
+                                                                       "button below to begin the verification process.",
+                              color=discord.Color.gold(), timestamp=discord.utils.utcnow())
+        if ctx.guild.icon:
+            embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon)
+        else:
+            embed.set_author(name=ctx.guild.name)
+        embed.set_thumbnail(url=self.client.user.display_avatar)
         embed.set_footer(text="©Cryptographer")
 
-        await ctx.send(embed=embed, view=VerifyView(self.client))
+        msg = await ctx.send(embed=embed, view=VerifyView(self.client))
+        await msg.pin()
+
+
+    @commands.command(usage="addtestveri", description="Add a temporary test verification message")
+    @commands.check_any(commands.is_owner(), commands.has_permissions(manage_guild=True))
+    async def addtestveri(self, ctx):
+        verified_role = self.client.variables[ctx.guild.id]['verified_role']
+
+        if not verified_role:
+            return await ctx.send("Please configure the verified role before setting up verification!")
+
+        embed = discord.Embed(title="Test Server Verification", description="This message will stop handling interactions in 5m. Please complete testing by then, "
+                                                                            "or send another message.",
+                              color=discord.Color.gold(),
+                              timestamp=discord.utils.utcnow())
+        if ctx.guild.icon:
+            embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon)
+        else:
+            embed.set_author(name=ctx.guild.name)
+        embed.set_thumbnail(url=self.client.user.display_avatar)
+        embed.set_footer(text="©Cryptographer")
+        await ctx.send(embed=embed, view=VerifyView(self.client, testing=True))
 
 
     @commands.Cog.listener()
@@ -66,33 +90,68 @@ class Verification(discord.ext.commands.Cog):
         if await self.check_account_age(member, log_channel):
             return
 
-        await self.wait_for_verification(member, log_channel)
+        captcha_channel: discord.TextChannel = self.client.variables[member.guild.id]['captcha_channel']
+        await captcha_channel.send(member.mention, delete_after=0.5)
+
+        # await self.wait_for_verification(member)
+
+        # try:
+        #     self.client.pending_verification.remove(member.id)
+        # except KeyError:
+        #     pass
 
         # await wait_for_message(self.client, member, msg_threshold=2, max_wait_s=3600, ban=False)
 
-    async def wait_for_verification(self, member: discord.Member, log_channel: discord.TextChannel) -> None:
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        temp_role: discord.Role = self.client.variables[after.guild.id]['temporary_role']
+        if before.pending and not after.pending:
+            if not temp_role:
+                return await verify_log(self.client, after, VerifyAction.ERR_NO_TEMP_ROLE)
+            await verify_log(self.client, after, VerifyAction.COMPLETE_SCREENING)
+            await after.add_roles(temp_role)
+            await self.wait_for_verification(after)
+            try:
+                self.client.pending_verification.remove(after.id)
+            except KeyError:
+                pass
+        verified_role: discord.Role = self.client.variables[after.guild.id]['verified_role']
+        if temp_role in before.roles and verified_role in after.roles:
+            await after.remove_roles(temp_role)
+
+    async def recheck_verification(self, member: discord.Member) -> None:
+        await self.wait_for_verification(member)
+        try:
+            self.client.pending_verification.remove(member.id)
+        except KeyError:
+            pass
+
+    async def wait_for_verification(self, member: discord.Member) -> None:
         captcha_channel: discord.TextChannel = self.client.variables[member.guild.id]['captcha_channel']
         time_left = 300
+        await captcha_channel.send(member.mention, delete_after=0.5)
 
         async def check_status():
+            if not member: return
+
             if member.id in self.client.pending_verification:
                 await asyncio.sleep(121)  # wait to check if timed out or completed
             # Check if member has the role yet
             return self.client.variables[member.guild.id]['verified_role'] in member.roles
 
-        await asyncio.sleep((time_left-180))  # sleep 3m
-        if self.client.variables[member.guild.id]['verified_role'] in member.roles:
+        await asyncio.sleep((time_left-120))  # sleep until there's 2m left
+        if not member or self.client.variables[member.guild.id]['verified_role'] in member.roles:
             return
 
         if member.id not in self.client.pending_verification:
-            await log_channel.send(f"{member.mention} - You will be kicked from the server in __2 minutes__ if verification has not been started before then!")
+            await captcha_channel.send(f"{member.mention} - You will be kicked from the server in __2 minutes__ if verification has not been started before then!", delete_after=15)
 
         await asyncio.sleep(180)
         if await check_status():
             return
 
-        await verify_log(self.client, member.guild, member, VerifyAction.EXPIRED)
-        await log_channel.send(f"[DEBUG: W_F_Verification] Member kicked here! 5m timeout expired!")
+        await verify_log(self.client, member, VerifyAction.EXPIRED)
+        await member.kick(reason="Timed out awaiting Verification")
 
         await action_log(self.client, member, False, "Timed out awaiting Verification")
         return
@@ -109,7 +168,7 @@ class Verification(discord.ext.commands.Cog):
         # First, determine if name contains unicode characters, if so - run unidecode & check against reference
         if ((not any(ord(char) < 128 for char in member.name) and unidecode(member.name) in self.client.banned_names[str(member.guild.id)][1])
                 or member.name in self.client.banned_names[str(member.guild.id)][0]):  # Else, check if name matches name blacklist
-            logger.info(f"Member joined with banned name: {member.name}")
+            log.info(f"Member joined with banned name: {member.name}")
 
             try:
                 await member.ban(reason="User joined with banned name!")
@@ -129,8 +188,8 @@ class Verification(discord.ext.commands.Cog):
         """
 
         # First, retrieve and store (perceptual "pHash") photo hash in DB
-        if not member.avatar:
-            photo_hash = str(member.default_avatar)
+        if member.display_avatar == member.default_avatar:
+            photo_hash = default_avatars[member.default_avatar.key]
         else:
             photo_hash = await utils.get_photo_hash(self.client, member)
 
@@ -139,12 +198,13 @@ class Verification(discord.ext.commands.Cog):
 
             # Check photo hash against blacklist or matches blacklist with 5 % similarity
             if (member.guild.id, photo_hash) in self.client.banned_photos or \
-                    any(utils.hamming_distance(hsh, photo_hash) < 5 for gid, hsh in self.client.banned_photos if gid == member.guild.id):
-                logger.log(f"Member joined with banned photo: {member.name} (ID: {member.id})")
+                    any(utils.hamming_distance(hsh, photo_hash) < 5 for gid, hsh in self.client.banned_photos if \
+                        gid == member.guild.id):
+                log.info(f"Member joined with banned photo: {member.name} (ID: {member.id})")
 
                 try:
                     await member.ban(reason="User joined with banned photo!")
-                    await action_log(self.client, member, True, "Banned Photo")
+                    await action_log(self.client, member, True, "Blacklisted Photo")
                     return True
                 except discord.DiscordException:
                     pass
@@ -238,4 +298,6 @@ async def wait_for_message(client: discord.Client, member: discord.Member, msg_t
             await member.ban(reason="Timeout expired before enough messages were sent.")
         else:
             await member.kick(reason="Timeout expired before enough messages were sent.")
+
+
 

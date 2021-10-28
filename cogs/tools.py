@@ -14,6 +14,11 @@ class Tools(commands.Cog):
     def __init__(self, client):
         self.client: discord.Client = client
 
+    @commands.command()
+    async def av(self, ctx):
+        await ctx.send(ctx.author.display_avatar.key)
+        await ctx.send(ctx.author.default_avatar.key)
+
     @commands.command(usage='convert <amount> <currency_code> to <currency_code>', description="Convert a currency into another\nEx: `convert 10 USD to EUR`")
     @commands.cooldown(1, 5, discord.ext.commands.BucketType.member)
     async def convert(self, ctx, amount, *, currency):
@@ -86,7 +91,7 @@ class Tools(commands.Cog):
 
         name = reminders[str(ctx.guild.id)]['name']
         photo = reminders[str(ctx.guild.id)]['photo']
-        data = (duration.timestamp(), ctx.message.reference.jump_url, resolved.author.name, str(resolved.author.avatar), content)
+        data = (duration.timestamp(), ctx.message.reference.jump_url, resolved.author.name, str(resolved.author.display_avatar), content)
 
         if str(ctx.author.id) in reminders[str(ctx.guild.id)] and reminders[str(ctx.guild.id)][str(ctx.author.id)] is not None:
             if len(reminders[str(ctx.guild.id)][str(ctx.author.id)]) > 9:
@@ -115,7 +120,7 @@ class Tools(commands.Cog):
             return
 
         await ctx.message.add_reaction("✅")
-        await reminder(ctx.author, ctx.guild.id, name, photo, total_seconds, ctx.message.reference.jump_url, resolved.author.name, resolved.author.avatar, content)
+        await reminder(ctx.author, ctx.guild.id, name, photo, total_seconds, ctx.message.reference.jump_url, resolved.author.name, resolved.author.display_avatar, content)
 
     @commands.command(usage='greed', description="Retrieve the current Crypto Fear & Greed Index", aliases=['fear', 'fng'])
     @commands.cooldown(1, 5, discord.ext.commands.BucketType.member)

@@ -43,7 +43,7 @@ class Hangman:
             color=np.random.randint(0xFFFFFF),  # Random color
             ).set_author(
             name=self.ctx.author.display_name,
-            icon_url=self.ctx.author.avatar,
+            icon_url=self.ctx.author.display_avatar,
             ).add_field(
             name='Hangman',
             value=None,  # will be filled later

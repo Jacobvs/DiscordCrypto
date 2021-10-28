@@ -18,6 +18,8 @@ import utils
 
 logger = logging.getLogger('discord')
 
+default_avatars = {'0': "blurple", '1': "gray", '2': "green", '3': "yellow", '4': "red", '5': "pink"}
+
 
 class Moderation(commands.Cog):
     """Commands for user/server management"""
@@ -425,8 +427,8 @@ class Moderation(commands.Cog):
 
             await ctx.send(embed=embed)
 
-        default_0 = [m for m in no_messages if m.avatar == m.default_avatar]
-        default_1 = [m for m in one_message if m.avatar == m.default_avatar]
+        default_0 = [m for m in no_messages if m.display_avatar == m.default_avatar]
+        default_1 = [m for m in one_message if m.display_avatar == m.default_avatar]
 
 
         await ctx.send(f"Wordlist name detection sums:\n**{len(no_messages)}** members with no messages\n**{len(one_message)}** members with 1 message"
@@ -509,10 +511,11 @@ class Moderation(commands.Cog):
         log_data = await sql.get_all_logs(self.client.pool)
         log_uids = {r[1] for r in log_data}
         no_hashes = {r[1] for r in log_data if r[4] is None}
-        memlist: list[discord.Member] = [m for m in guild.members if (m.id in no_hashes or m.id not in log_uids) and m.avatar]
+        memlist: list[discord.Member] = [m for m in guild.members if (m.id in no_hashes or m.id not in log_uids) and m.display_avatar != m.default_avatar]
         already_hashed = len(log_uids) - len(no_hashes)
 
-        defaults = [(guild.id, m.id, str(m.default_avatar)) for m in guild.members if (m.id in no_hashes or m.id not in log_uids) and not m.avatar]
+        defaults = [(guild.id, m.id, default_avatars[m.default_avatar.key]) for m in guild.members if (m.id in no_hashes or m.id not in log_uids) and m.display_avatar ==
+                    m.default_avatar]
         print(f"Defaults: {len(defaults)} ({defaults[:1]})")
         if len(defaults) > 0:
             await sql.batch_update_photo_hashes(self.client.pool, defaults)
@@ -604,15 +607,17 @@ class Moderation(commands.Cog):
                     return count, sql_data_list, failed_list
 
                 tasks = [send_request(m, client_session=cs, url=url, rate_limiter=rate_limiter) for m, url in
-                         [(m, f"{base_url}/{m.id}/{m.avatar}{ext}") for m in memlist]
+                         [(m, f"{base_url}/{m.id}/{m.display_avatar.key}{ext}") for m in memlist]
                          ]
                 i, sql_data, failed = await run_tasks(tasks, i, sql_data)
                 print("DONE.. Trying failed again.")
 
                 tasks = [send_request(m, client_session=cs, url=url, rate_limiter=rate_limiter) for m, url in
-                         [(m, f"{base_url}/{m.id}/{m.avatar}{ext}") for m in failed]
+                         [(m, f"{base_url}/{m.id}/{m.display_avatar.key}{ext}") for m in failed]
                          ]
                 i, sql_data, failed = await run_tasks(tasks, i, sql_data)
+
+                failed =[]
 
 
         print("Updating Final SQL Hashes")
@@ -631,7 +636,7 @@ class Moderation(commands.Cog):
     @checks.is_staff_check()
     async def photoblacklist(self, ctx, user: discord.User):
 
-        if user.avatar == user.default_avatar:
+        if user.display_avatar == user.default_avatar:
             raise discord.ext.commands.BadArgument(message="Cannot photo-blacklist a user with a default profile photo!")
 
         res = await self.sync_photo_hashes(ctx.guild, ctx.channel)
@@ -656,7 +661,7 @@ class Moderation(commands.Cog):
         embed = discord.Embed(title="Success!", description=f"**{len(matches)}** members with identical profile photos found!\n\nTo ban all detected members & __blacklist this "
                                                             f"photo__,\nClick the ✅ to confirm.\nClick the ❌ to ignore this result.", color=discord.Color.green())
         embed.add_field(name="Photo Hash:", value=photo_hash)
-        embed.set_thumbnail(url=user.avatar)
+        embed.set_thumbnail(url=user.display_avatar)
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()
         msg = await ctx.send(embed=embed)
@@ -690,7 +695,7 @@ class Moderation(commands.Cog):
 
             embed.title = f"Banning Matches... (0/{len(matches)})"
             embed.description = "Please wait... This can take a few minutes to complete."
-            embed.set_thumbnail(url=user.avatar)
+            embed.set_thumbnail(url=user.display_avatar)
             embed.colour = discord.Color.gold()
             await msg.edit(embed=embed)
 
@@ -722,8 +727,8 @@ class Moderation(commands.Cog):
 
         embed = discord.Embed(description=f"Time since creation: {utils.duration_formatter(elapsed_seconds)}\n\n"
                                           f"Created:{user.created_at.strftime('%b %d %Y %H:%M:%S %p')}", color=discord.Color.green())
-        embed.set_author(name=user.name, icon_url=user.avatar)
-        embed.set_thumbnail(url=user.avatar)
+        embed.set_author(name=user.name, icon_url=user.display_avatar)
+        embed.set_thumbnail(url=user.display_avatar)
         embed.set_footer(text="©Cryptographer")
         embed.timestamp = datetime.datetime.utcnow()
         await ctx.send(embed=embed)

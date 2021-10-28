@@ -155,7 +155,7 @@ class TicTacToe:
         """
         self.embed.set_author(
             name=self.players[player].display_name,
-            icon_url=self.players[player].avatar,
+            icon_url=self.players[player].display_avatar,
             ).set_field_at(
             index=0,  # graphics
             name=self.embed.fields[0].name,

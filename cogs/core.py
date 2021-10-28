@@ -26,8 +26,8 @@ class Core(commands.Cog):
         embed = discord.Embed(title="Donation Links!", description="Thank you for supporting the bot's development & hosting fees!\n\nWe hate scammers as much as you do, "
                               "however, servers are expensive – so we truly appreciate any and all"
                                                                    "donations!", color=discord.Color.green())
-        embed.set_author(name="Cryptographer", icon_url=ctx.bot.user.avatar)
-        embed.set_thumbnail(url=ctx.bot.user.avatar)
+        embed.set_author(name="Cryptographer", icon_url=ctx.bot.user.display_avatar)
+        embed.set_thumbnail(url=ctx.bot.user.display_avatar)
         embed.add_field(name="BTC / BCH:", value="```yml\nBTC:\nbc1qqcafrpnqswfrcjexc8yflx8jyfu2xefnpa4yh9\nBCH:\nbitcoincash:qqz3p7swawutt5esfxcmtyul5grgzlpaccjnvg2z30```",
                         inline=False)
         embed.add_field(name="ETH & ERC20 Tokens:", value="```yml\nETH:\n0x87ED595eB5388bb5f57806640249e1caf3075480```", inline=False)
@@ -35,7 +35,7 @@ class Core(commands.Cog):
         embed.add_field(name="ADA (Cardano):", value="```yml\nADA:\naddr1q8u653vrpjz4zth9vmntu7zkzwg65jq46nmf9r30qv05p2fhcf7yf4wxfsjqquzrfxrvh92v9tmma2fvr9z7xyjwkwrs7nggwf```",
                         inline=False)
         owner = self.client.get_user(self.client.owner_id)
-        embed.set_footer(text=f"DM Darkmatter#7321 for other crypto!", icon_url=owner.avatar)
+        embed.set_footer(text=f"DM Darkmatter#7321 for other crypto!", icon_url=owner.display_avatar)
         embed.timestamp = datetime.utcnow()
         await ctx.send(embed=embed)
 
@@ -118,8 +118,8 @@ class Core(commands.Cog):
             cog_commands = cog.get_commands()
             embed = discord.Embed(title=opt.capitalize(), description=f"{cog.description}\n\n`<>` Indicates a required argument.\n"
                                                                       "`[]` Indicates an optional argument.\n", color=discord.Color.blue(), )
-            embed.set_author(name=f"{self.client.user.name} Help Menu", icon_url=self.client.user.avatar)
-            embed.set_thumbnail(url=self.client.user.avatar)
+            embed.set_author(name=f"{self.client.user.name} Help Menu", icon_url=self.client.user.display_avatar)
+            embed.set_thumbnail(url=self.client.user.display_avatar)
             embed.set_footer(
                 text=f"Use {ctx.prefix}help <command> for more information on a command.")
             for cmd in cog_commands:
@@ -136,11 +136,11 @@ class Core(commands.Cog):
         page = discord.Embed(title=f"{self.client.user.name} Help Menu",
                              description="Thank you for using Cryptographer! Please direct message `Darkmatter#7321` if you find bugs or have suggestions!",
                              color=discord.Color.blue(), )
-        page.set_thumbnail(url=self.client.user.avatar)
+        page.set_thumbnail(url=self.client.user.display_avatar)
         page.set_footer(text="Use the reactions to flip pages.")
         all_pages.append(page)
         page = discord.Embed(title=f"{self.client.user.name} Help Menu", colour=discord.Color.blue())
-        page.set_thumbnail(url=self.client.user.avatar)
+        page.set_thumbnail(url=self.client.user.display_avatar)
         page.set_footer(text="Use the reactions to flip pages.")
         page.add_field(name="About Cryptographer",
                        value="This bot was built to as a way to give back to the Crypto community by allowing for better member management (reduced spam & bots!) within discord, "
@@ -159,8 +159,8 @@ class Core(commands.Cog):
             page = discord.Embed(title=cog_name, description=f"{cog.description}\n\n`<>` Indicates a required argument.\n"
                                                              "`[]` Indicates an optional argument.\n",
                                  color=discord.Color.blue(), )
-            page.set_author(name=f"{self.client.user.name} Help Menu", icon_url=self.client.user.avatar)
-            page.set_thumbnail(url=self.client.user.avatar)
+            page.set_author(name=f"{self.client.user.name} Help Menu", icon_url=self.client.user.display_avatar)
+            page.set_thumbnail(url=self.client.user.display_avatar)
             page.set_footer(text=f"Use the reactions to flip pages | Use {ctx.prefix}help <command> for more information on a command.")
             for cmd in cog_commands:
                 if cmd.hidden is False:
@@ -267,8 +267,8 @@ class Core(commands.Cog):
     @commands.command(usage="testlog", description="Send a test log message in this server.")
     async def testlog(self, ctx):
         logchannel = self.client.variables[ctx.guild.id]['log_channel']
-        from cogs import logging
-        await logging.send_log(self.client, ctx.guild, logchannel, discord.Embed(title="TEST"), "TEST LOG")
+        from cogs import log
+        await log.send_log(self.client, ctx.guild, logchannel, discord.Embed(title="TEST"), "TEST LOG")
 
 
     @commands.command(usage='testperms <channel>', description='Show bot perms for a specified channel.')

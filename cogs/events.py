@@ -12,7 +12,7 @@ from unidecode import unidecode
 
 import sql
 import utils
-from cogs.logging import send_log
+from cogs.log import send_log
 from main import get_prefix
 
 
@@ -244,8 +244,8 @@ class Events(commands.Cog):
                                               f"below:",
                                   color=discord.Color.teal(), url=msg.jump_url)
             if member:
-                embed.set_author(name=member.display_name + " <-- NAME (VERIFY MATCH!) PHOTO -->", icon_url=member.avatar)
-                embed.set_thumbnail(url=member.avatar)
+                embed.set_author(name=member.display_name + " <-- NAME (VERIFY MATCH!) PHOTO -->", icon_url=member.display_avatar)
+                embed.set_thumbnail(url=member.display_avatar)
             embed.set_image(url=img.url)
             footer = 'Click ✅ to ban user, ❌ to ignore.' if member else 'Click 📝 or ❌ to resolve this message.'
             embed.set_footer(text=footer + " | Detected")
@@ -362,8 +362,8 @@ class Events(commands.Cog):
                                         embd = discord.Embed(description=f"{m.mention} ({m.name}#{m.discriminator})\n# Sent Messages: **__{message_count}__**\n\n"
                                                                          f"If this is the correct member, press the ✅ reaction below.\nIf not, use the arrows to browse "
                                                                          f"other members with similar names.\n\nIf no members are correct, use the ❌.", color=discord.Color.blue())
-                                        embd.set_author(name=m.display_name, icon_url=m.avatar)
-                                        embd.set_thumbnail(url=m.avatar)
+                                        embd.set_author(name=m.display_name, icon_url=m.display_avatar)
+                                        embd.set_thumbnail(url=m.display_avatar)
                                         embd.set_footer(text=f"Match {i}/{len(mems)}")
                                         embeds.append(embd)
 
@@ -402,7 +402,7 @@ class Events(commands.Cog):
                                     ban_embed = discord.Embed(description=f"{member.mention} ({member.name}#{member.discriminator}) was banned for "
                                                                           f"{'spamming' if is_spam else 'duplicate name'}.",
                                                               color=discord.Color.gold())
-                                    ban_embed.set_author(name='Member Banned', icon_url=member.avatar)
+                                    ban_embed.set_author(name='Member Banned', icon_url=member.display_avatar)
                                     ban_embed.set_footer(text=f'ID: {member.id}')
                                     submission_channel = self.client.get_channel(int(embed.url.split('channels/')[1].split("/")[1]))
                                     author_mention = '<@' + embed.description.split('<@')[1].split('>')[0] + '>'
@@ -446,7 +446,7 @@ class Events(commands.Cog):
                                         ban_embed = discord.Embed(description=f"{member.mention} ({member.name}#{member.discriminator}) was banned for "
                                                                               f"{'spamming' if is_spam else 'duplicate name'}.",
                                                                   color=discord.Color.gold())
-                                        ban_embed.set_author(name='Member Banned', icon_url=member.avatar)
+                                        ban_embed.set_author(name='Member Banned', icon_url=member.display_avatar)
                                         ban_embed.set_footer(text=f'ID: {member.id}')
                                         submission_channel = self.client.get_channel(int(embed.url.split('channels/')[1].split("/")[1]))
                                         author_mention = '<@' + embed.description.split('<@')[1].split('>')[0] + '>'
@@ -480,7 +480,6 @@ class Events(commands.Cog):
                             try:
                                 await log_channel.send(embed=embed)
                                 await msg.delete()
-                                await msg.clear_reactions()
                             except discord.Forbidden or discord.HTTPException:
                                 pass
             elif payload.channel_id in [396316232124727296, 797960110310686760, 804133361378656287] and str(payload.emoji) == '♻️' and\
@@ -495,8 +494,8 @@ class Events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
-        if before.avatar != after.avatar:
-            if not after.avatar:
+        if before.display_avatar != after.display_avatar:
+            if not after.display_avatar:
                 photo_hash = str(after.default_avatar)
             else:
                 photo_hash = await utils.get_photo_hash(self.client, after)

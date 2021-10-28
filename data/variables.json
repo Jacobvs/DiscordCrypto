@@ -1,68 +1,85 @@
 {
-    "-1": {
-        "maintenance_mode": false,
-        "captcha_status": false,
-        "duplicate_status": false,
-        "min_account_age_seconds": -1,
-        "bot_channel_only": [""],
-        "verify_msg_id": -1,
-        "roles": {
-            "verified_role": null,
-            "temporary_role": null,
-            "min_staff_role": null
-        },
-        "channels": {
-            "file_storage": null,
-            "log_channel": null,
-            "captcha_channel": null,
-            "spam_reports": null,
-            "duplicate_reports": null,
-            "bots_channel": null,
-            "verify_log_channel": null
-        }
+  "-1": {
+    "maintenance_mode": false,
+    "captcha_status": false,
+    "duplicate_status": false,
+    "min_account_age_seconds": -1,
+    "bot_channel_only": [
+      ""
+    ],
+    "verify_msg_id": -1,
+    "roles": {
+      "verified_role": null,
+      "temporary_role": null,
+      "min_staff_role": null
     },
-    "390628544369393664": {
-        "maintenance_mode": false,
-        "captcha_status": false,
-        "duplicate_status": true,
-        "min_account_age_seconds": -1,
-        "bot_channel_only": ["greed", "hangman", "connect4", "highlow", "tictactoe", "minesweeper", "rps"],
-        "verify_msg_id": -1,
-        "roles": {
-            "verified_role": 608524630113779722,
-            "temporary_role": 679606142678073355,
-            "min_staff_role": 390644277560082435
-        },
-        "channels": {
-            "file_storage": 838968272510648390,
-            "log_channel": 842295312168910869,
-            "captcha_channel": 866477064022392872,
-            "spam_reports": 806958515267960924,
-            "duplicate_reports": 806958515267960924,
-            "bots_channel": 780208685229801502,
-            "verify_log_channel": 869751787379359774
-        }
-    },
-    "801856472816418846": {
-        "maintenance_mode": false,
-        "captcha_status": true,
-        "duplicate_status": true,
-        "min_account_age_seconds": -1,
-        "bot_channel_only": ["fear", "fng", "greed", "stats", "help"],
-        "verify_msg_id": -1,
-        "roles": {
-            "verified_role": 801856683235082240,
-            "temporary_role": 801856658204000276,
-            "min_staff_role": 801856831466242138
-        },
-        "channels": {
-            "file_storage": 801858500447305748,
-            "log_channel": 801858500447305748,
-            "captcha_channel": 801858544915447818,
-            "spam_reports": 801858500447305748,
-            "duplicate_reports": 801858500447305748,
-            "bots_channel": 801858500447305748,
-            "verify_log_channel": 801858500447305748
-        }
+    "channels": {
+      "file_storage": null,
+      "log_channel": null,
+      "captcha_channel": null,
+      "spam_reports": null,
+      "duplicate_reports": null,
+      "bots_channel": null,
+      "verify_log_channel": null
     }
+  },
+  "390628544369393664": {
+    "maintenance_mode": false,
+    "captcha_status": false,
+    "duplicate_status": true,
+    "min_account_age_seconds": -1,
+    "bot_channel_only": [
+      "greed",
+      "hangman",
+      "connect4",
+      "highlow",
+      "tictactoe",
+      "minesweeper",
+      "rps"
+    ],
+    "verify_msg_id": -1,
+    "roles": {
+      "verified_role": 473071709499686924,
+      "temporary_role": 870038895021158481,
+      "min_staff_role": 390644277560082435
+    },
+    "channels": {
+      "file_storage": 838968272510648390,
+      "log_channel": 842295312168910869,
+      "captcha_channel": 866477064022392872,
+      "spam_reports": 806958515267960924,
+      "duplicate_reports": 806958515267960924,
+      "bots_channel": 780208685229801502,
+      "verify_log_channel": 869751787379359774
+    }
+  },
+  "801856472816418846": {
+    "maintenance_mode": false,
+    "captcha_status": true,
+    "duplicate_status": true,
+    "min_account_age_seconds": -1,
+    "bot_channel_only": [
+      "fear",
+      "fng",
+      "greed",
+      "stats",
+      "help"
+    ],
+    "verify_msg_id": -1,
+    "roles": {
+      "verified_role": 801856683235082240,
+      "temporary_role": 801856658204000276,
+      "min_staff_role": 801856831466242138
+    },
+    "channels": {
+      "file_storage": 801858500447305748,
+      "log_channel": 801858500447305748,
+      "captcha_channel": 801858544915447818,
+      "spam_reports": 801858500447305748,
+      "duplicate_reports": 801858500447305748,
+      "bots_channel": 801858500447305748,
+      "verify_log_channel": 801858500447305748
+    }
+  },
+  "maintenance_mode": false
 }

@@ -7,7 +7,7 @@ import discord
 import numpy as np
 from discord.webhook.async_ import async_context
 import sql
-from cogs.logging import verify_log, VerifyAction
+from cogs.log import verify_log, VerifyAction
 from main import CryptoBot
 
 completed_embed = discord.Embed(title="Successfully Verified!", description="\n\nYou can dismiss this message below. The verified role will be added within 30s.",
@@ -184,8 +184,8 @@ class VerifyButton(discord.ui.Button['Verify']):
 
         if score < 25:
             embed = completed_embed.copy()
-            embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar)
-            embed.set_thumbnail(url=view.client.user.avatar)
+            embed.set_author(name=interaction.user.name, icon_url=interaction.user.display_avatar)
+            embed.set_thumbnail(url=view.client.user.display_avatar)
             embed.description = "Cryptographer's AI Bot detection has automatically determined you are a valid user!\n__No further action is required at this " \
                                                "time.__\n\nYou will be given the verified role within 30s."
             embed.add_field(name="Bot Detection Likelihood", value=f"Chance that {interaction.user.mention} is a bot: *{score}%*")
@@ -239,7 +239,7 @@ async def get_bot_chance_score(client: discord.Client, member: discord.Member) -
     :param member: discord.User of user to check
     :return (float, bool, bool, float, float, float): score, default_pfp, wordlist_match, creation score, flags, messages
     """
-    default_pfp = member.avatar == member.default_avatar
+    default_pfp = member.display_avatar == member.default_avatar
     wordlist_match = check_wordlist(client, member)
     creation_score = max(0, 28 - (discord.utils.utcnow() - member.created_at).days) * 2.63
     all_flags: list[str] = [k for k, v in iter(member.public_flags) if v]
